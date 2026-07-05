@@ -79,12 +79,19 @@ class ParameterizeTransformation(Transformation):
             )
         if var.ctype is not Var:
             raise TypeError("pyomo-cvp: var must be a Var.")
-        if var.index_set() is not contset:
-            raise ValueError(
-                f"pyomo-cvp: '{var.name}' is not indexed by (exactly) "
-                f"'{contset.name}'. Either it was already parameterized, or "
-                f"it has additional index sets (Phase 2)."
-            )
+        idxset = var.index_set()
+        if idxset is contset:
+            subsets, pos = [contset], 0
+        else:
+            subsets = list(idxset.subsets())
+            matches = [i for i, s in enumerate(subsets) if s is contset]
+            if len(matches) != 1:
+                raise ValueError(
+                    f"pyomo-cvp: '{var.name}' is not indexed by "
+                    f"'{contset.name}' (exactly once). Either it was already "
+                    f"parameterized, or it is not a control over this set."
+                )
+            pos = matches[0]
         # DerivativeVar registers with ctype Var, so filter by isinstance
         for dv in model.component_objects(Var, active=True):
             if isinstance(dv, DerivativeVar) and dv.get_state_var() is var:
@@ -94,7 +101,6 @@ class ParameterizeTransformation(Transformation):
                 )
 
         fe = list(contset.get_finite_elements())
-        points = sorted(contset)
         reps = fe[1:]                       # representative of element i: fe[i+1]
 
         def rep_of(t):
@@ -102,25 +108,36 @@ class ParameterizeTransformation(Transformation):
                 return fe[1]
             return fe[bisect_left(fe, t)]
 
-        # capture the old copies and their attributes
-        old = {t: var[t] for t in points}
-        rep_attrs = {
-            r: (old[r].domain, old[r].lb, old[r].ub, old[r].value)
-            for r in reps
-        }
+        def as_tuple(i):
+            return i if isinstance(i, tuple) else (i,)
+
+        def to_rep(full):
+            full = as_tuple(full)
+            return full[:pos] + (rep_of(full[pos]),) + full[pos + 1:]
+
+        # capture the old copies and, for representative indices, attributes
+        old = {as_tuple(i): var[i] for i in var}
+        rep_attrs = {}
+        for full, vd in old.items():
+            if full[pos] in reps:
+                rep_attrs[full] = (vd.domain, vd.lb, vd.ub, vd.value)
 
         name = var.local_name
         parent = var.parent_block()
         parent.del_component(var)
+        newsets = subsets[:pos] + [reps] + subsets[pos + 1:]
+        any_dom = next(iter(rep_attrs.values()))[0]
         new_var = Var(
-            reps,
-            domain=rep_attrs[reps[0]][0],
-            bounds=lambda m, t: (rep_attrs[t][1], rep_attrs[t][2]),
-            initialize=lambda m, t: rep_attrs[t][3],
+            *newsets,
+            domain=any_dom,
+            bounds=lambda m, *i: (rep_attrs[i][1], rep_attrs[i][2]),
+            initialize=lambda m, *i: rep_attrs[i][3],
         )
         parent.add_component(name, new_var)
 
-        submap = {id(old[t]): new_var[rep_of(t)] for t in points}
+        submap = {
+            id(vd): new_var[to_rep(full)] for full, vd in old.items()
+        }
 
         for c in model.component_data_objects(
             Constraint, active=True, descend_into=True
