@@ -48,11 +48,7 @@ def test_piecewise_linear_matches_handbuilt():
 
 @needs_ipopt
 @pytest.mark.parametrize("scheme", ["LAGRANGE-RADAU", "LAGRANGE-LEGENDRE"])
-def test_reduced_collocation_dominates_rcp(scheme):
-    # The problem is a nonconvex NLP, so structurally different (but
-    # mathematically equivalent) models can land in different local optima.
-    # The correct equivalence check is warm-start dominance: started from the
-    # rcp optimum, the elimination model must do at least as well.
+def test_reduced_collocation_matches_rcp(scheme):
     k = 2
     m1 = racecar()
     d = pyo.TransformationFactory("dae.collocation")
@@ -66,21 +62,32 @@ def test_reduced_collocation_dominates_rcp(scheme):
         m2, var=m2.u, contset=m2.tau, profile=("reduced_collocation", k)
     )
     assert len(m2.u) == NFE * k
-
-    # warm start every m2 variable from the rcp solution (skip unset values)
-    for t in m2.tau:
-        for src, dst in ((m1.x, m2.x), (m1.v, m2.v), (m1.dx, m2.dx),
-                         (m1.dv, m2.dv)):
-            if src[t].value is not None:
-                dst[t] = src[t].value
-    for t in m2.u:
-        if m1.u[t].value is not None:
-            m2.u[t] = m1.u[t].value
-    m2.tf = m1.tf.value
-
+    # variable bounds on eliminated copies survive as profile-bound rows
+    assert m2.find_component("u_profile_bounds") is not None
     r2 = pyo.SolverFactory("ipopt").solve(m2)
     assert r2.solver.termination_condition == pyo.TerminationCondition.optimal
-    assert pyo.value(m2.tf) <= pyo.value(m1.tf) * (1 + 1e-6)
+    if scheme == "LAGRANGE-RADAU":
+        assert pyo.value(m2.tf) == pytest.approx(pyo.value(m1.tf), rel=1e-6)
+    else:
+        # Under Legendre, rcp leaves the element-boundary control copies as
+        # free independent variables (its dangling-variable wart); we tie them
+        # to the element polynomial, so the models differ slightly by design.
+        assert pyo.value(m2.tf) == pytest.approx(pyo.value(m1.tf), rel=2e-3)
+
+
+@needs_ipopt
+def test_reduced_collocation_respects_bounds():
+    from pyomo_cvp import control_value
+
+    m = discretize(racecar())
+    pyo.TransformationFactory("cvp.parameterize").apply_to(
+        m, var=m.u, contset=m.tau, profile=("reduced_collocation", 2)
+    )
+    r = pyo.SolverFactory("ipopt").solve(m)
+    assert r.solver.termination_condition == pyo.TerminationCondition.optimal
+    for t in sorted(m.tau):
+        u = control_value(m.u, t)
+        assert -3 - 1e-6 <= u <= 1 + 1e-6
 
 
 def test_reduced_collocation_guards():

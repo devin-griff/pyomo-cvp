@@ -237,6 +237,12 @@ class ParameterizeTransformation(Transformation):
         parent.add_component(name, new_var)
 
         submap = {}
+        # (expr, lb, ub) for eliminated copies whose substitution is a
+        # NON-convex combination of the free values: there the original
+        # variable bounds are not implied by the knot bounds and must be kept
+        # as explicit constraints (matching reduce_collocation_points, which
+        # enforces bounds at every collocation point).
+        bound_rows = []
         for full, vd in old.items():
             plist = pairs[full[pos]]
             if len(plist) == 1 and plist[0][1] == 1.0:
@@ -245,6 +251,9 @@ class ParameterizeTransformation(Transformation):
                 node = sum(
                     c * new_var[with_t(full, ft)] for ft, c in plist
                 )
+                convex = all(-1e-12 <= c <= 1 + 1e-12 for _, c in plist)
+                if not convex and (vd.lb is not None or vd.ub is not None):
+                    bound_rows.append((node, vd.lb, vd.ub))
             submap[id(vd)] = node
 
         for c in model.component_data_objects(
@@ -259,6 +268,24 @@ class ParameterizeTransformation(Transformation):
             Expression, active=True, descend_into=True
         ):
             e.set_value(replace_expressions(e.expr, submap))
+
+        if bound_rows:
+            from pyomo.core import ConstraintList
+
+            clname = name + "_profile_bounds"
+            if parent.find_component(clname) is not None:
+                raise RuntimeError(
+                    f"pyomo-cvp: component '{clname}' already exists."
+                )
+            cl = ConstraintList()
+            parent.add_component(clname, cl)
+            for node, lb, ub in bound_rows:
+                if lb is not None and ub is not None:
+                    cl.add((lb, node, ub))
+                elif lb is not None:
+                    cl.add(node >= lb)
+                else:
+                    cl.add(node <= ub)
 
         info = getattr(parent, "_pyomo_cvp_info", None)
         if info is None:
