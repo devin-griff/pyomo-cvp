@@ -84,7 +84,7 @@ def twin_engine():
     m.ode_v = pyo.Constraint(m.tau, rule=ode_v)
     m.ic_x = pyo.Constraint(expr=m.x[0] == 0)
     m.ic_v = pyo.Constraint(expr=m.v[0] == 0)
-    m.fc_x = pyo.Constraint(expr=m.x[1] == 200.0)
+    m.fc_x = pyo.Constraint(expr=m.x[1] == 100.0)
     m.fc_v = pyo.Constraint(expr=m.v[1] == 0)
     m.obj = pyo.Objective(expr=m.tf)
     return m

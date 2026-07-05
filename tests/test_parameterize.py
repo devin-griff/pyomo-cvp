@@ -9,7 +9,7 @@ ipopt_available = pyo.SolverFactory("ipopt").available(False)
 needs_ipopt = pytest.mark.skipif(not ipopt_available, reason="ipopt not available")
 
 NFE, NCP = 15, 3
-L, R = 200.0, 0.001
+L, R = 100.0, 0.001
 
 
 def racecar():
