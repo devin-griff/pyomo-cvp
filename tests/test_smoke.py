@@ -10,9 +10,9 @@ def test_transformation_registers():
     assert xf is not None
 
 
-def test_phase0_not_implemented():
+def test_missing_args_rejected():
     m = pyo.ConcreteModel()
-    with pytest.raises(NotImplementedError):
+    with pytest.raises(TypeError, match="var= and contset="):
         pyo.TransformationFactory("cvp.parameterize").apply_to(m)
 
 
