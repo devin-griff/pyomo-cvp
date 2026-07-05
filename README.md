@@ -74,6 +74,31 @@ difference. Controls may carry additional (non-time) indices.
 See [examples/racecar_cvp.ipynb](examples/racecar_cvp.ipynb) for a
 complete worked example showing both forms and all three profiles.
 
+## Citing
+
+If you use this package, please also cite the pyomo.dae framework it builds on:
+
+> Nicholson, B., Siirola, J.D., Watson, J.-P., Zavala, V.M., Biegler, L.T.
+> (2018). pyomo.dae: a modeling and automatic discretization framework for
+> optimization with differential and algebraic equations. *Mathematical
+> Programming Computation* 10(2), 187-223.
+> [doi:10.1007/s12532-017-0127-0](https://doi.org/10.1007/s12532-017-0127-0)
+
+```bibtex
+@article{nicholson2018pyomodae,
+  author  = {Nicholson, Bethany and Siirola, John D. and Watson, Jean-Paul
+             and Zavala, Victor M. and Biegler, Lorenz T.},
+  title   = {pyomo.dae: a modeling and automatic discretization framework
+             for optimization with differential and algebraic equations},
+  journal = {Mathematical Programming Computation},
+  volume  = {10},
+  number  = {2},
+  pages   = {187--223},
+  year    = {2018},
+  doi     = {10.1007/s12532-017-0127-0}
+}
+```
+
 ## License
 
 Apache License 2.0. See [LICENSE](LICENSE).
