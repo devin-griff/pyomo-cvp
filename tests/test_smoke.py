@@ -1,0 +1,37 @@
+"""Phase 0: registration smoke tests."""
+import pytest
+import pyomo.environ as pyo
+
+import pyomo_cvp  # noqa: F401  (registers the plugin)
+
+
+def test_transformation_registers():
+    xf = pyo.TransformationFactory("cvp.parameterize")
+    assert xf is not None
+
+
+def test_phase0_not_implemented():
+    m = pyo.ConcreteModel()
+    with pytest.raises(NotImplementedError):
+        pyo.TransformationFactory("cvp.parameterize").apply_to(m)
+
+
+def test_declare_profile_records():
+    from pyomo.dae import ContinuousSet
+
+    m = pyo.ConcreteModel()
+    m.tau = ContinuousSet(bounds=(0, 1))
+    m.u = pyo.Var(m.tau)
+    pyomo_cvp.declare_profile(m.u, wrt=m.tau)
+    decls = getattr(m, "_pyomo_cvp_profiles")
+    assert len(decls) == 1 and decls[0]["var"] is m.u
+
+
+def test_unknown_profile_rejected():
+    from pyomo.dae import ContinuousSet
+
+    m = pyo.ConcreteModel()
+    m.tau = ContinuousSet(bounds=(0, 1))
+    m.u = pyo.Var(m.tau)
+    with pytest.raises(ValueError, match="unknown profile"):
+        pyomo_cvp.declare_profile(m.u, wrt=m.tau, profile="cubic_spline")
