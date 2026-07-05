@@ -1,5 +1,7 @@
 # pyomo-cvp
 
+[![PyPI](https://img.shields.io/pypi/v/pyomo-cvp.svg)](https://pypi.org/project/pyomo-cvp/)
+[![Python versions](https://img.shields.io/pypi/pyversions/pyomo-cvp.svg)](https://pypi.org/project/pyomo-cvp/)
 [![CI](https://github.com/devin-griff/pyomo-cvp/actions/workflows/ci.yml/badge.svg)](https://github.com/devin-griff/pyomo-cvp/actions/workflows/ci.yml)
 [![License](https://img.shields.io/badge/license-Apache%202.0-blue.svg)](LICENSE)
 
