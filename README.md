@@ -70,9 +70,7 @@ difference. Controls may carry additional (non-time) indices.
   form of `reduce_collocation_points(ncp=k)`.
 
 See [examples/racecar_cvp.ipynb](examples/racecar_cvp.ipynb) for a
-complete worked example of the declared form, and
-[examples/explicit_api.ipynb](examples/explicit_api.ipynb) for the explicit form
-with a finite-difference discretization.
+complete worked example showing both forms and all three profiles.
 
 ## License
 
