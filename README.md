@@ -71,7 +71,7 @@ difference. Controls may carry additional (non-time) indices.
 
 See [examples/racecar_cvp.ipynb](examples/racecar_cvp.ipynb) for a
 complete worked example of the declared form, and
-[examples/explicit_api.py](examples/explicit_api.py) for the explicit form
+[examples/explicit_api.ipynb](examples/explicit_api.ipynb) for the explicit form
 with a finite-difference discretization.
 
 ## License
