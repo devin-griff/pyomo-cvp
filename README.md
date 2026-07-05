@@ -5,7 +5,7 @@
 [![CI](https://github.com/devin-griff/pyomo-cvp/actions/workflows/ci.yml/badge.svg)](https://github.com/devin-griff/pyomo-cvp/actions/workflows/ci.yml)
 [![License](https://img.shields.io/badge/license-Apache%202.0-blue.svg)](LICENSE)
 
-Control vector parameterization for [pyomo.dae](https://pyomo.readthedocs.io/en/stable/explanation/modeling_extensions/dae.html).
+Control vector parameterization for [pyomo.dae](https://pyomo.readthedocs.io/en/6.8.0/modeling_extensions/dae.html#collocation-transformation).
 
 `pyomo.dae` makes control profiles piecewise-constant by adding linking
 equality constraints (`reduce_collocation_points`), which keeps every
