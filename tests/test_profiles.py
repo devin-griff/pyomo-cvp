@@ -106,3 +106,25 @@ def test_unknown_tuple_profile():
         pyo.TransformationFactory("cvp.parameterize").apply_to(
             m, var=m.u, contset=m.tau, profile=("spline", 3)
         )
+
+
+def test_control_value_helper():
+    from pyomo_cvp import control_value
+
+    m = discretize(racecar())
+    pyo.TransformationFactory("cvp.parameterize").apply_to(
+        m, var=m.u, contset=m.tau
+    )
+    for t in m.u:
+        m.u[t] = 0.25
+    assert control_value(m.u, 0.5) == pytest.approx(0.25)
+
+    m2 = discretize(racecar())
+    pyo.TransformationFactory("cvp.parameterize").apply_to(
+        m2, var=m2.u, contset=m2.tau, profile="piecewise_linear"
+    )
+    knots = sorted(m2.u)
+    m2.u[knots[0]] = 0.0
+    m2.u[knots[1]] = 1.0
+    mid = (knots[0] + knots[1]) / 2
+    assert control_value(m2.u, mid) == pytest.approx(0.5)

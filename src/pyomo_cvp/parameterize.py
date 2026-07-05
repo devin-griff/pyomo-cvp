@@ -77,6 +77,53 @@ def _validate_profile(profile):
     return profile, None
 
 
+def control_value(var, t, index=()):
+    """Evaluate a parameterized control at any time ``t``.
+
+    ``var`` is the (replaced) control component; ``index`` supplies any
+    non-time index components, in their original order. Works for every
+    profile: piecewise-constant lookup, piecewise-linear interpolation, or
+    the element's Lagrange polynomial for reduced collocation.
+    """
+    from pyomo.core import value as _value
+
+    info_map = getattr(var.parent_block(), "_pyomo_cvp_info", {})
+    if var.local_name not in info_map:
+        raise ValueError(
+            f"pyomo-cvp: '{var.name}' has not been parameterized."
+        )
+    info = info_map[var.local_name]
+    fe, mode, pairs = info["fe"], info["mode"], info["pairs"]
+    if t <= fe[0]:
+        elem = 0
+    else:
+        elem = bisect_left(fe, min(t, fe[-1])) - 1
+
+    if mode == "piecewise_constant":
+        plist = [(fe[elem + 1], 1.0)]
+    elif mode == "piecewise_linear":
+        a, b = fe[elem], fe[elem + 1]
+        w = (t - a) / (b - a)
+        plist = [(a, 1.0 - w), (b, w)]
+    else:  # reduced_collocation: the element's free knots
+        knots = sorted(
+            {ft for tt, pl in pairs.items()
+             for ft, _ in pl
+             if fe[elem] < tt <= fe[elem + 1] or (elem == 0 and tt <= fe[0])}
+        )
+        knots = [ft for ft in knots if fe[elem] < ft <= fe[elem + 1]]
+        plist = list(zip(knots, _lagrange_coeffs(t, knots)))
+
+    pos = info["pos"]
+    index = tuple(index)
+
+    def member(ft):
+        full = index[:pos] + (ft,) + index[pos:]
+        return var[full if len(full) > 1 else full[0]]
+
+    return sum(c * _value(member(ft)) for ft, c in plist)
+
+
 def _lagrange_coeffs(t, knots):
     coeffs = []
     for i in knots:
@@ -212,6 +259,13 @@ class ParameterizeTransformation(Transformation):
             Expression, active=True, descend_into=True
         ):
             e.set_value(replace_expressions(e.expr, submap))
+
+        info = getattr(parent, "_pyomo_cvp_info", None)
+        if info is None:
+            info = {}
+            setattr(parent, "_pyomo_cvp_info", info)
+        info[name] = {"mode": mode, "k": k, "fe": fe, "pos": pos,
+                      "pairs": pairs}
 
         return model
 

@@ -3,7 +3,7 @@
 Importing this package registers the ``cvp.parameterize`` transformation.
 """
 from pyomo_cvp import parameterize  # noqa: F401  (registers the plugin)
-from pyomo_cvp.parameterize import declare_profile  # noqa: F401
+from pyomo_cvp.parameterize import control_value, declare_profile  # noqa: F401
 
 try:
     from importlib.metadata import version
