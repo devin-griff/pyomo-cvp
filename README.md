@@ -69,8 +69,8 @@ difference. Controls may carry additional (non-time) indices.
   collocation points), Lagrange interpolation elsewhere; the elimination
   form of `reduce_collocation_points(ncp=k)`.
 
-See [examples/racecar.py](examples/racecar.py) for a complete runnable
-example.
+See [examples/racecar_cvp.ipynb](examples/racecar_cvp.ipynb) for a
+complete worked example.
 
 ## License
 
