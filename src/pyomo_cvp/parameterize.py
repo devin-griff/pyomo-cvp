@@ -58,14 +58,36 @@ class ParameterizeTransformation(Transformation):
 
     def _apply_to(self, model, var=None, contset=None,
                   profile="piecewise_constant", **kwds):
+        if var is None and contset is None:
+            # discovery mode: apply every declare_profile() declaration
+            found = 0
+            for block in model.block_data_objects(active=True,
+                                                  descend_into=True):
+                decls = getattr(block, _DECLARATION_ATTR, None)
+                if not decls:
+                    continue
+                while decls:
+                    d = decls.pop(0)
+                    self._parameterize(model, d["var"], d["wrt"], d["profile"])
+                    found += 1
+            if found == 0:
+                raise RuntimeError(
+                    "pyomo-cvp: no control profile declarations found on the "
+                    "model (either none were made with declare_profile(), or "
+                    "they were already applied)."
+                )
+            return model
+        return self._parameterize(model, var, contset, profile)
+
+    def _parameterize(self, model, var, contset, profile):
         if profile not in PROFILES:
             raise ValueError(
                 f"pyomo-cvp: unknown profile {profile!r}; supported: {PROFILES}"
             )
         if var is None or contset is None:
             raise TypeError(
-                "pyomo-cvp: pass var= and contset= explicitly (discovery of "
-                "declare_profile declarations arrives in Phase 3)."
+                "pyomo-cvp: pass both var= and contset=, or neither (to apply "
+                "declare_profile declarations)."
             )
         if contset.ctype is not ContinuousSet:
             raise TypeError(

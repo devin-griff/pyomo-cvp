@@ -10,10 +10,20 @@ def test_transformation_registers():
     assert xf is not None
 
 
-def test_missing_args_rejected():
+def test_no_args_without_declarations():
     m = pyo.ConcreteModel()
-    with pytest.raises(TypeError, match="var= and contset="):
+    with pytest.raises(RuntimeError, match="no control profile declarations"):
         pyo.TransformationFactory("cvp.parameterize").apply_to(m)
+
+
+def test_partial_args_rejected():
+    from pyomo.dae import ContinuousSet
+
+    m = pyo.ConcreteModel()
+    m.tau = ContinuousSet(bounds=(0, 1))
+    m.u = pyo.Var(m.tau)
+    with pytest.raises(TypeError, match="both var= and contset="):
+        pyo.TransformationFactory("cvp.parameterize").apply_to(m, var=m.u)
 
 
 def test_declare_profile_records():
