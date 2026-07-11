@@ -94,10 +94,15 @@ def control_value(var, t, index=()):
         )
     info = info_map[var.local_name]
     fe, mode, pairs = info["fe"], info["mode"], info["pairs"]
+    if not fe[0] <= t <= fe[-1]:
+        raise ValueError(
+            f"pyomo-cvp: t={t} is outside the control's domain "
+            f"[{fe[0]}, {fe[-1]}]."
+        )
     if t <= fe[0]:
         elem = 0
     else:
-        elem = bisect_left(fe, min(t, fe[-1])) - 1
+        elem = bisect_left(fe, t) - 1
 
     if mode == "piecewise_constant":
         plist = [(fe[elem], 1.0)]

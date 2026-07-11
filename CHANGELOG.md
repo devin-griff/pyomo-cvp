@@ -16,6 +16,8 @@ to [Semantic Versioning](https://semver.org/).
   code written for 0.1.0 that indexed controls by element end times must
   shift its labels. Optima, profiles, and `control_value` evaluations are
   numerically unchanged: this is a relabeling of the free variables only.
+- `control_value` now raises `ValueError` for `t` outside the control's
+  domain instead of silently holding the end values.
 
 ## [0.1.0] - 2026-07-05
 
