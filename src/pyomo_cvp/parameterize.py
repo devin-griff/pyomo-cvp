@@ -10,10 +10,10 @@ copies.
 Profiles
 --------
 ``'piecewise_constant'``
-    One free value per finite element, at the element's last point (equals
-    the point ``reduce_collocation_points`` keeps free under Lagrange-Radau).
-    Element i owns the half-open interval (fe[i], fe[i+1]]; the initial point
-    belongs to the first element.
+    One free value per finite element, indexed by the element's START time
+    (u[t0] exists; the final time carries no control). Element i owns the
+    half-open interval (fe[i], fe[i+1]], so the profile is left-continuous
+    at interior boundaries; the initial point belongs to the first element.
 ``'piecewise_linear'``
     One free value per element boundary (nfe + 1 values), continuous, with
     interior points substituted by linear interpolation between the two
@@ -100,7 +100,7 @@ def control_value(var, t, index=()):
         elem = bisect_left(fe, min(t, fe[-1])) - 1
 
     if mode == "piecewise_constant":
-        plist = [(fe[elem + 1], 1.0)]
+        plist = [(fe[elem], 1.0)]
     elif mode == "piecewise_linear":
         a, b = fe[elem], fe[elem + 1]
         w = (t - a) / (b - a)
@@ -307,8 +307,13 @@ class ParameterizeTransformation(Transformation):
             return bisect_left(fe, t) - 1
 
         if mode == "piecewise_constant":
+            # u(t) = u_k on (t_k, t_{k+1}]: the free value is anchored at the
+            # element's START, so controls index by fe[:-1] and u[t0] exists.
+            # Boundary points map to the element they terminate (as the Radau
+            # and backward-difference equations require), so the evaluated
+            # profile is left-continuous at interior boundaries.
             for t in points:
-                pairs[t] = [(fe[element_of(t) + 1], 1.0)]
+                pairs[t] = [(fe[element_of(t)], 1.0)]
             return pairs
 
         if mode == "piecewise_linear":

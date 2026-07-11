@@ -6,6 +6,17 @@ to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-07-10
+
+### Changed
+
+- **Breaking**: piecewise-constant controls now index by each element's
+  START time (the standard CVP convention, u(t) = u_k on [t_k, t_k+1)),
+  not its end. `u[t0]` now exists and the final time carries no control;
+  code written for 0.1.0 that indexed controls by element end times must
+  shift its labels. Optima, profiles, and `control_value` evaluations are
+  numerically unchanged: this is a relabeling of the free variables only.
+
 ## [0.1.0] - 2026-07-05
 
 First release (alpha).

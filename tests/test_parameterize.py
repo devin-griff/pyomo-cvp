@@ -95,9 +95,13 @@ def test_same_optimum_as_rcp():
     assert r2.solver.termination_condition == pyo.TerminationCondition.optimal
 
     assert pyo.value(m2.tf) == pytest.approx(pyo.value(m1.tf), rel=1e-6)
-    # element controls agree with the rcp element values (the kept points)
-    for t in m2.u:
-        assert pyo.value(m2.u[t]) == pytest.approx(pyo.value(m1.u[t]), abs=1e-6)
+    # element controls agree with the rcp element values. cvp indexes each
+    # element's control by its START; rcp's kept Radau point is the element's
+    # right boundary, so compare u[fe[i]] against the rcp value at fe[i+1].
+    fe = m2.tau.get_finite_elements()
+    for i in range(len(fe) - 1):
+        assert pyo.value(m2.u[fe[i]]) == pytest.approx(
+            pyo.value(m1.u[fe[i + 1]]), abs=1e-6)
 
 
 def test_guard_not_discretized():

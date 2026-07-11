@@ -64,7 +64,9 @@ difference. Controls may carry additional (non-time) indices.
 
 ## Profiles
 
-- `'piecewise_constant'` --- one free value per finite element.
+- `'piecewise_constant'` --- one free value per finite element, indexed by
+  the element's start time (`u[t0]` exists; the final time carries no
+  control).
 - `'piecewise_linear'` --- one free value per element boundary, continuous,
   interior points interpolated.
 - `('reduced_collocation', k)` --- k free values per element (the last k
