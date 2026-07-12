@@ -42,19 +42,44 @@ PROFILES = ("piecewise_constant", "piecewise_linear")
 _DECLARATION_ATTR = "_pyomo_cvp_profiles"
 
 
-def declare_profile(var, wrt, profile="piecewise_constant"):
-    """Declare a control profile for ``var`` over ContinuousSet ``wrt``.
+def declare_profile(*variables, wrt=None, profile="piecewise_constant"):
+    """Declare a control profile for one or more Vars over ContinuousSet
+    ``wrt`` (keyword-only). The profile settings apply to every variable in
+    the call: ``declare_profile(m.v1, m.v2, wrt=m.t)``.
 
-    Inert metadata recorded on the variable's parent block; applied later by
-    ``TransformationFactory('cvp.parameterize').apply_to(model)``.
+    Inert metadata recorded on each variable's parent block; applied later
+    by ``TransformationFactory('cvp.parameterize').apply_to(model)``.
     """
+    from pyomo.dae import ContinuousSet
+
+    if not variables:
+        raise TypeError(
+            "pyomo-cvp: declare_profile needs at least one control Var: "
+            "declare_profile(m.u, wrt=m.tau)"
+        )
+    if wrt is None:
+        if len(variables) >= 2 and isinstance(variables[1], ContinuousSet):
+            raise TypeError(
+                "pyomo-cvp: wrt is keyword-only; write "
+                "declare_profile(m.u, wrt=m.tau) instead of "
+                "declare_profile(m.u, m.tau)"
+            )
+        raise TypeError(
+            "pyomo-cvp: wrt is required: declare_profile(m.u, wrt=m.tau)"
+        )
     _validate_profile(profile)
-    block = var.parent_block()
-    decls = getattr(block, _DECLARATION_ATTR, None)
-    if decls is None:
-        decls = []
-        setattr(block, _DECLARATION_ATTR, decls)
-    decls.append({"var": var, "wrt": wrt, "profile": profile})
+    for var in variables:
+        if isinstance(var, ContinuousSet):
+            raise TypeError(
+                f"pyomo-cvp: {var.name} is a ContinuousSet, not a control "
+                "Var; wrt is keyword-only: declare_profile(m.u, wrt=m.tau)"
+            )
+        block = var.parent_block()
+        decls = getattr(block, _DECLARATION_ATTR, None)
+        if decls is None:
+            decls = []
+            setattr(block, _DECLARATION_ATTR, decls)
+        decls.append({"var": var, "wrt": wrt, "profile": profile})
 
 
 def _validate_profile(profile):

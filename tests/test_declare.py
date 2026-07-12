@@ -98,3 +98,32 @@ def test_declarations_consumed():
     xf.apply_to(m)
     with pytest.raises(RuntimeError, match="already applied"):
         xf.apply_to(m)
+
+
+def test_varargs_declares_all():
+    import pyomo.environ as pyo
+    from pyomo.dae import ContinuousSet
+    from pyomo_cvp.parameterize import _DECLARATION_ATTR
+
+    m = pyo.ConcreteModel()
+    m.tau = ContinuousSet(bounds=(0, 1))
+    m.u1 = pyo.Var(m.tau)
+    m.u2 = pyo.Var(m.tau)
+    declare_profile(m.u1, m.u2, wrt=m.tau)
+    decls = getattr(m, _DECLARATION_ATTR)
+    assert [d["var"] is v for d, v in zip(decls, (m.u1, m.u2))] == [True, True]
+    assert all(d["wrt"] is m.tau for d in decls)
+
+
+def test_positional_wrt_raises_clearly():
+    import pytest
+    import pyomo.environ as pyo
+    from pyomo.dae import ContinuousSet
+
+    m = pyo.ConcreteModel()
+    m.tau = ContinuousSet(bounds=(0, 1))
+    m.u = pyo.Var(m.tau)
+    with pytest.raises(TypeError, match="keyword-only"):
+        declare_profile(m.u, m.tau)
+    with pytest.raises(TypeError, match="wrt is required"):
+        declare_profile(m.u)

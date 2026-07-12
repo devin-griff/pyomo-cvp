@@ -6,6 +6,13 @@ to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Changed
+
+- `declare_profile` accepts one or more control Vars per call
+  (`declare_profile(m.v1, m.v2, wrt=m.t)`), with the profile settings
+  applying to every variable listed; `wrt` is now keyword-only, and the
+  old positional form raises a TypeError naming the fix.
+
 ## [0.2.0] - 2026-07-10
 
 ### Changed
