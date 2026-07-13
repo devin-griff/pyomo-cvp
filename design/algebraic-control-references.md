@@ -1,6 +1,8 @@
 # Design note: control references in algebraic expressions
 
-Status: design, not yet implemented. Records the fix agreed 2026-07-13.
+Status: implemented and tested 2026-07-13 (the substitution split in
+`parameterize.py`; `tests/test_algebraic_refs.py`). This note records the
+design and the profile x scheme coverage analysis behind it.
 
 ## Summary
 
@@ -83,17 +85,54 @@ After the fix a tracking objective summed over the element starts
 `fe[0..N-1]` penalizes each element's control once, at its own index,
 matching the AMPL `sum{i in fe} ... u1[i]`.
 
-### Secondary: the final-time control
+**Detection gotcha.** "References a `DerivativeVar`" must be tested by
+walking `identify_variables(expr)` and checking membership in the set of
+DerivativeVar data ids (or `isinstance(v.parent_component(), DerivativeVar)`).
+`identify_components(expr, [DerivativeVar])` returns nothing, a false
+negative, so it cannot be used. After `dae.collocation` or
+`dae.finite_difference` the user's ODE constraint still carries its
+`DerivativeVar` (e.g. `zdot[t] == u[t] - z[t]`), and pyomo.dae's own
+`disc_eq` rows carry it too; both are differential and both take the
+differential map (the `disc_eq` reference no controls, so it is a no-op
+there).
 
-A control decision exists for elements `0..N-1`; there is none at the final
-node `fe[N]` (nothing evolves after the final time). So an **algebraic**
-reference to the final-time control should error rather than be silently
-rewritten. For piecewise-constant that variable does not survive
-`parameterize` anyway; the value of the fix is turning a masked mistake
-into a clear message. This is a safety net around the correctness fix, not
-the fix itself, and it does not touch the differential equations (which
-legitimately reference the final node — e.g. piecewise-linear's last-
-segment interpolation).
+### The final-time control: an error, not a mapping
+
+For piecewise-constant there is no control at the final node `fe[N]`
+(nothing evolves past the final time), and the variable does not survive
+`parameterize`. An algebraic reference to it cannot map to a real element
+control. The only non-erroring option would be to map it to the last
+element `v[fe[N-1]]`, but that silently double-counts the last element's
+control, which is exactly the silent wrong answer this fix removes. So the
+final node must error, with a message naming the control and pointing at
+the elements. This is part of correctness, not a separate safety feature.
+It does not touch the differential equations, which legitimately reference
+the final node (piecewise-linear's last-segment interpolation, and every
+profile's final collocation ODE).
+
+## The real models (checked)
+
+Both examples route the objective through a scalar `Var` `m.track` defined
+by an algebraic `Constraint` `tracking_def` (`m.track == sum(...)`), the
+AMPL `tracking`/`trackingdef` pattern, not a named `Expression`. So:
+
+- The controls live in `tracking_def`, a `DerivativeVar`-free constraint,
+  correctly classified algebraic. The fix reaches them.
+- **quad-tank** tracks states only, no controls, so it is unaffected.
+- **hicks** tracks states and controls and sums over all of `m.i`, the
+  boundaries `{0..N}`, so `tracking_def` references `v1[fe[N]]`, `v2[fe[N]]`,
+  the final-node controls. Under this fix that constraint will error until
+  the tracking stops penalizing the terminal control. The AMPL-consistent
+  form sums the control terms over the elements `0..N-1` and handles the
+  terminal state separately (AMPL's `termcost`, which references no
+  controls). hicks_cvp.ipynb is untracked WIP and is not edited here; the
+  change is on the user's side.
+
+No control-referencing named `Expression`s appear in the real models. The
+implementation still classifies named `Expression`s by their own
+`DerivativeVar` content; a control-referencing `Expression` shared between a
+differential and an algebraic root would resolve by that content and is a
+documented limitation, not a case the real models hit.
 
 ## Scope and non-goals
 

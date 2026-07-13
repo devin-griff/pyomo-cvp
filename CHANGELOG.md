@@ -4,6 +4,29 @@ All notable changes to this project are documented here. The format is based
 on [Keep a Changelog](https://keepachangelog.com/), and the project adheres
 to [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Fixed
+
+- Control references in algebraic expressions (objectives, path constraints,
+  non-differential named expressions) no longer shift for piecewise-constant
+  controls. A reference to element k's control `u[fe[k]]` stays element k's,
+  instead of being rewritten to element k-1's `u[fe[k-1]]`, which silently
+  penalized the wrong element. The rewrite now splits by expression kind:
+  differential equations (those carrying a `DerivativeVar`: the user's ODEs
+  and pyomo.dae's `disc_eq`) are unchanged; algebraic expressions resolve a
+  control reference to the element it sits in. piecewise-linear and
+  reduced-collocation are unaffected, their maps already coincide.
+
+### Changed
+
+- **Breaking**: an algebraic reference to the final-time piecewise-constant
+  control (`u[fe[N]]`, which does not exist: N elements carry N controls
+  indexed by the element starts 0..N-1) now raises `ValueError` instead of
+  being silently rewritten to the last element and double-counted. Reference
+  controls over the elements, not the final boundary, and penalize the
+  terminal state on its own.
+
 ## [0.3.0] - 2026-07-12
 
 ### Changed

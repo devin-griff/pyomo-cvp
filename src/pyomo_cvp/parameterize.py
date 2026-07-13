@@ -24,7 +24,7 @@ Profiles
     elimination form of ``reduce_collocation_points(ncp=k)``. Requires a
     collocation discretization with k <= ncp.
 """
-from bisect import bisect_left
+from bisect import bisect_left, bisect_right
 
 from pyomo.core import (
     Constraint,
@@ -35,6 +35,7 @@ from pyomo.core import (
     Var,
 )
 from pyomo.core.expr import replace_expressions
+from pyomo.core.expr.visitor import identify_variables
 from pyomo.dae import ContinuousSet, DerivativeVar
 
 PROFILES = ("piecewise_constant", "piecewise_linear")
@@ -286,18 +287,78 @@ class ParameterizeTransformation(Transformation):
                     bound_rows.append((node, vd.lb, vd.ub))
             submap[id(vd)] = node
 
+        # submap is the DIFFERENTIAL map: at a node it gives the control the
+        # ODE there integrates with. It is applied to constraints that carry a
+        # DerivativeVar (the user's ODEs and pyomo.dae's disc_eq).
+        #
+        # submap_alg is the ALGEBRAIC map, for objectives / path constraints /
+        # non-differential expressions: a control reference names the control
+        # of the element it sits in (the decision the user wrote). The two maps
+        # differ only for the discontinuous piecewise_constant profile, and
+        # only at a finite-element boundary: the differential map takes the
+        # element ENDING at the node (left-continuous, correct for the
+        # collocation equation there), the algebraic map the element STARTING
+        # at it. For the continuous profiles the maps coincide. The final node
+        # starts no element, so an algebraic reference to it (which cannot mean
+        # a real control) is collected in `forbidden` and raised, rather than
+        # silently mapped to the last element and double-counted.
+        submap_alg = submap
+        forbidden = {}
+        if mode == "piecewise_constant":
+            submap_alg = {}
+            for full, vd in old.items():
+                j = bisect_right(fe, full[pos]) - 1
+                if j >= len(fe) - 1:
+                    forbidden[id(vd)] = vd.name
+                else:
+                    submap_alg[id(vd)] = new_var[with_t(full, fe[j])]
+
+        deriv_ids = {
+            id(d)
+            for comp in model.component_objects(Var, active=True)
+            if isinstance(comp, DerivativeVar)
+            for d in comp.values()
+        }
+
+        def is_differential(expr):
+            return any(id(v) in deriv_ids for v in identify_variables(expr))
+
+        def check_final(expr, where):
+            for v in identify_variables(expr):
+                nm = forbidden.get(id(v))
+                if nm is not None:
+                    raise ValueError(
+                        f"pyomo-cvp: {where} references '{nm}', the control at "
+                        f"the final time. A piecewise-constant control has one "
+                        f"value per element (indexed by the element starts, "
+                        f"0..N-1); the final node carries no control. Reference "
+                        f"controls over the elements, not the final boundary."
+                    )
+
         for c in model.component_data_objects(
             Constraint, active=True, descend_into=True
         ):
-            c.set_value(replace_expressions(c.expr, submap))
+            if is_differential(c.expr):
+                c.set_value(replace_expressions(c.expr, submap))
+            else:
+                if forbidden:
+                    check_final(c.expr, f"constraint '{c.name}'")
+                c.set_value(replace_expressions(c.expr, submap_alg))
         for o in model.component_data_objects(
             Objective, active=True, descend_into=True
         ):
-            o.set_value(replace_expressions(o.expr, submap))
+            if forbidden:
+                check_final(o.expr, f"objective '{o.name}'")
+            o.set_value(replace_expressions(o.expr, submap_alg))
         for e in model.component_data_objects(
             Expression, active=True, descend_into=True
         ):
-            e.set_value(replace_expressions(e.expr, submap))
+            if is_differential(e.expr):
+                e.set_value(replace_expressions(e.expr, submap))
+            else:
+                if forbidden:
+                    check_final(e.expr, f"expression '{e.name}'")
+                e.set_value(replace_expressions(e.expr, submap_alg))
 
         if bound_rows:
             from pyomo.core import ConstraintList
