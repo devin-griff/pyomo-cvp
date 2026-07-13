@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "pyomo-cvp"
-version = "0.3.0"
+version = "0.4.0"
 description = "Control vector parameterization for pyomo.dae: piecewise control profiles by variable elimination instead of linking constraints."
 readme = "README.md"
 requires-python = ">=3.9"
