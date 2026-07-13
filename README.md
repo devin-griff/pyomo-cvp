@@ -23,9 +23,6 @@ On the classic race car problem (nfe=15, ncp=3, Lagrange-Radau):
 | `reduce_collocation_points`    |           46 |                  30 |
 | `cvp.parameterize`             |           15 |                   0 |
 
-This matters for NLP solvers such as IPOPT, which have no presolve to strip
-redundant variables and equalities.
-
 ## Install
 
 ```bash
