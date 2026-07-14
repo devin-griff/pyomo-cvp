@@ -6,6 +6,8 @@ to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-07-14
+
 ### Changed
 
 - Relicensed from Apache-2.0 to BSD-3-Clause, matching the Pyomo and
@@ -24,6 +26,7 @@ to [Semantic Versioning](https://semver.org/).
   license headers, a shared test-helper module (tests no longer import one
   another), and coverage, a minimum-dependency check, and a spell-check step in
   CI.
+- CI cuts a GitHub Release from the changelog on each version tag.
 
 ## [0.4.0] - 2026-07-13
 
@@ -92,7 +95,8 @@ First release (alpha).
 - Guards: not-yet-discretized set, DerivativeVar-attached control, double
   application, reduced collocation without collocation or with k > ncp.
 
-[Unreleased]: https://github.com/devin-griff/pyomo-cvp/compare/v0.4.0...HEAD
+[Unreleased]: https://github.com/devin-griff/pyomo-cvp/compare/v0.5.0...HEAD
+[0.5.0]: https://github.com/devin-griff/pyomo-cvp/compare/v0.4.0...v0.5.0
 [0.4.0]: https://github.com/devin-griff/pyomo-cvp/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/devin-griff/pyomo-cvp/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/devin-griff/pyomo-cvp/compare/v0.1.0...v0.2.0
