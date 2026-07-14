@@ -1,14 +1,12 @@
+# Copyright (c) 2026 Devin Griffith
+# SPDX-License-Identifier: BSD-3-Clause
 """Phase 2: Legendre, finite difference, and multi-indexed controls."""
 import pytest
 import pyomo.environ as pyo
 from pyomo.dae import ContinuousSet, DerivativeVar
 
 import pyomo_cvp  # noqa: F401
-
-from test_parameterize import racecar, NFE, NCP, R
-
-ipopt_available = pyo.SolverFactory("ipopt").available(False)
-needs_ipopt = pytest.mark.skipif(not ipopt_available, reason="ipopt not available")
+from helpers import racecar, NFE, NCP, R, needs_ipopt
 
 
 @needs_ipopt
@@ -24,9 +22,7 @@ def test_legendre_matches_rcp():
     pyo.TransformationFactory("dae.collocation").apply_to(
         m2, nfe=NFE, ncp=NCP, scheme="LAGRANGE-LEGENDRE"
     )
-    pyo.TransformationFactory("cvp.parameterize").apply_to(
-        m2, var=m2.u, contset=m2.tau
-    )
+    pyo.TransformationFactory("cvp.parameterize").apply_to(m2, var=m2.u, contset=m2.tau)
     assert len(m2.u) == NFE
     r2 = pyo.SolverFactory("ipopt").solve(m2)
     assert r2.solver.termination_condition == pyo.TerminationCondition.optimal
@@ -47,10 +43,8 @@ def test_finite_difference():
     pyo.TransformationFactory("dae.finite_difference").apply_to(
         m2, nfe=NFE, scheme="BACKWARD"
     )
-    pyo.TransformationFactory("cvp.parameterize").apply_to(
-        m2, var=m2.u, contset=m2.tau
-    )
-    assert len(m2.u) == NFE          # nfe+1 copies -> nfe (t0 copy eliminated)
+    pyo.TransformationFactory("cvp.parameterize").apply_to(m2, var=m2.u, contset=m2.tau)
+    assert len(m2.u) == NFE  # nfe+1 copies -> nfe (t0 copy eliminated)
     r2 = pyo.SolverFactory("ipopt").solve(m2)
     assert r2.solver.termination_condition == pyo.TerminationCondition.optimal
     assert pyo.value(m2.tf) == pytest.approx(pyo.value(m1.tf), rel=1e-6)
@@ -76,9 +70,7 @@ def twin_engine():
     def ode_v(m, t):
         if t == m.tau.first():
             return pyo.Constraint.Skip
-        return m.dv[t] == m.tf * (
-            0.6 * m.u[t, 1] + 0.4 * m.u[t, 2] - R * m.v[t] ** 2
-        )
+        return m.dv[t] == m.tf * (0.6 * m.u[t, 1] + 0.4 * m.u[t, 2] - R * m.v[t] ** 2)
 
     m.ode_x = pyo.Constraint(m.tau, rule=ode_x)
     m.ode_v = pyo.Constraint(m.tau, rule=ode_v)
@@ -103,9 +95,7 @@ def test_multi_indexed_control():
     pyo.TransformationFactory("dae.collocation").apply_to(
         m2, nfe=NFE, ncp=NCP, scheme="LAGRANGE-RADAU"
     )
-    pyo.TransformationFactory("cvp.parameterize").apply_to(
-        m2, var=m2.u, contset=m2.tau
-    )
+    pyo.TransformationFactory("cvp.parameterize").apply_to(m2, var=m2.u, contset=m2.tau)
     assert len(m2.u) == NFE * 2
     r2 = pyo.SolverFactory("ipopt").solve(m2)
     assert r2.solver.termination_condition == pyo.TerminationCondition.optimal

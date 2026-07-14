@@ -1,3 +1,5 @@
+# Copyright (c) 2026 Devin Griffith
+# SPDX-License-Identifier: BSD-3-Clause
 """pyomo-cvp: control vector parameterization for pyomo.dae.
 
 Importing this package registers the ``cvp.parameterize`` transformation.

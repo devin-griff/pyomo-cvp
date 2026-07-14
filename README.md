@@ -3,7 +3,7 @@
 [![PyPI](https://img.shields.io/pypi/v/pyomo-cvp.svg)](https://pypi.org/project/pyomo-cvp/)
 [![Python versions](https://img.shields.io/pypi/pyversions/pyomo-cvp.svg)](https://pypi.org/project/pyomo-cvp/)
 [![CI](https://github.com/devin-griff/pyomo-cvp/actions/workflows/ci.yml/badge.svg)](https://github.com/devin-griff/pyomo-cvp/actions/workflows/ci.yml)
-[![License](https://img.shields.io/badge/license-Apache%202.0-blue.svg)](LICENSE)
+[![License](https://img.shields.io/badge/license-BSD%203--Clause-blue.svg)](LICENSE)
 
 Control vector parameterization for [pyomo.dae](https://pyomo.readthedocs.io/en/6.8.0/modeling_extensions/dae.html#collocation-transformation).
 
@@ -70,8 +70,17 @@ difference. Controls may carry additional (non-time) indices.
   collocation points), Lagrange interpolation elsewhere; the elimination
   form of `reduce_collocation_points(ncp=k)`.
 
-See [examples/racecar_cvp.ipynb](examples/racecar_cvp.ipynb) for a
-complete worked example showing both forms and all three profiles.
+## Examples
+
+Worked notebooks under [examples/](examples/):
+
+- [racecar_cvp.ipynb](examples/racecar_cvp.ipynb): minimum-time race car,
+  both invocation forms and all three profiles.
+- [hicks_cvp.ipynb](examples/hicks_cvp.ipynb): the Hicks-Ray CSTR.
+- [Quad_tank_cvp.ipynb](examples/Quad_tank_cvp.ipynb): the quadruple-tank
+  process.
+
+Install their dependencies with `pip install pyomo-cvp[examples]`.
 
 ## Citing
 
@@ -98,6 +107,11 @@ If you use this package, please also cite the pyomo.dae framework it builds on:
 }
 ```
 
+## Maintainer
+
+Maintained by [@devin-griff](https://github.com/devin-griff). Issues and pull
+requests welcome.
+
 ## License
 
-Apache License 2.0. See [LICENSE](LICENSE).
+BSD 3-Clause License. See [LICENSE](LICENSE).

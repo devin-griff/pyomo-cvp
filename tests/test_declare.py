@@ -1,3 +1,5 @@
+# Copyright (c) 2026 Devin Griffith
+# SPDX-License-Identifier: BSD-3-Clause
 """Phase 3: declare_profile discovery path."""
 import pytest
 import pyomo.environ as pyo
@@ -5,11 +7,7 @@ from pyomo.dae import ContinuousSet, DerivativeVar
 
 import pyomo_cvp
 from pyomo_cvp import declare_profile
-
-from test_parameterize import racecar, NFE, NCP, R
-
-ipopt_available = pyo.SolverFactory("ipopt").available(False)
-needs_ipopt = pytest.mark.skipif(not ipopt_available, reason="ipopt not available")
+from helpers import racecar, NFE, NCP, R, needs_ipopt
 
 
 def discretize(m, **kw):
@@ -23,9 +21,7 @@ def discretize(m, **kw):
 @needs_ipopt
 def test_declared_matches_explicit():
     m1 = discretize(racecar())
-    pyo.TransformationFactory("cvp.parameterize").apply_to(
-        m1, var=m1.u, contset=m1.tau
-    )
+    pyo.TransformationFactory("cvp.parameterize").apply_to(m1, var=m1.u, contset=m1.tau)
     r1 = pyo.SolverFactory("ipopt").solve(m1)
     assert r1.solver.termination_condition == pyo.TerminationCondition.optimal
 
@@ -58,9 +54,7 @@ def two_controls():
     def ode_v(m, t):
         if t == m.tau.first():
             return pyo.Constraint.Skip
-        return m.dv[t] == m.tf * (
-            m.throttle[t] - m.brake[t] - R * m.v[t] ** 2
-        )
+        return m.dv[t] == m.tf * (m.throttle[t] - m.brake[t] - R * m.v[t] ** 2)
 
     m.ode_x = pyo.Constraint(m.tau, rule=ode_x)
     m.ode_v = pyo.Constraint(m.tau, rule=ode_v)
@@ -103,14 +97,14 @@ def test_declarations_consumed():
 def test_varargs_declares_all():
     import pyomo.environ as pyo
     from pyomo.dae import ContinuousSet
-    from pyomo_cvp.parameterize import _DECLARATION_ATTR
+    from pyomo_cvp.parameterize import _cvp_data
 
     m = pyo.ConcreteModel()
     m.tau = ContinuousSet(bounds=(0, 1))
     m.u1 = pyo.Var(m.tau)
     m.u2 = pyo.Var(m.tau)
     declare_profile(m.u1, m.u2, wrt=m.tau)
-    decls = getattr(m, _DECLARATION_ATTR)
+    decls = _cvp_data(m)["profiles"]
     assert [d["var"] is v for d, v in zip(decls, (m.u1, m.u2))] == [True, True]
     assert all(d["wrt"] is m.tau for d in decls)
 

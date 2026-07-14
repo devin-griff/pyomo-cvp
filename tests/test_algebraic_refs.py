@@ -1,3 +1,5 @@
+# Copyright (c) 2026 Devin Griffith
+# SPDX-License-Identifier: BSD-3-Clause
 """Algebraic vs differential control references (piecewise_constant shift).
 
 The bug: parameterize rewrote control references uniformly, so an algebraic
@@ -38,12 +40,14 @@ def build(profile, obj="elements", path=False):
         return mm.zdot[t] == mm.u[t] - mm.z[t]
 
     pts = sorted(m.i)
-    idxs = pts[:-1] if obj == "elements" else pts    # element starts vs all
+    idxs = pts[:-1] if obj == "elements" else pts  # element starts vs all
     m.obj = pyo.Objective(expr=sum(m.u[i] for i in idxs))
     if path:
+
         @m.Constraint(pts[:-1])
         def cap(mm, t):
             return mm.u[t] <= 1.0
+
     return m
 
 
@@ -112,5 +116,5 @@ def test_rcp_algebraic_unchanged(scheme):
     # reduced_collocation: the control is a per-element polynomial, so an
     # algebraic reference resolves to the polynomial value and does not error.
     m = discretize(build(("reduced_collocation", 2), obj="elements"), scheme)
-    pyo.TransformationFactory("cvp.parameterize").apply_to(m)   # must not raise
+    pyo.TransformationFactory("cvp.parameterize").apply_to(m)  # must not raise
     assert urefs(m.obj.expr)

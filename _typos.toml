@@ -1,0 +1,6 @@
+# Configuration for the `typos` spell-checker (crate-ci/typos), matching the
+# Pyomo contribution guide's spell-check step.
+[files]
+# Executed-notebook outputs carry base64 blobs and random tokens that trip the
+# checker; the notebook source prose is reviewed by eye instead.
+extend-exclude = ["examples/*.ipynb"]

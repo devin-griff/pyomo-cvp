@@ -1,13 +1,11 @@
+# Copyright (c) 2026 Devin Griffith
+# SPDX-License-Identifier: BSD-3-Clause
 """Phase 4: piecewise_linear and reduced_collocation profiles."""
 import pytest
 import pyomo.environ as pyo
 
 import pyomo_cvp  # noqa: F401
-
-from test_parameterize import racecar, NFE, NCP
-
-ipopt_available = pyo.SolverFactory("ipopt").available(False)
-needs_ipopt = pytest.mark.skipif(not ipopt_available, reason="ipopt not available")
+from helpers import racecar, NFE, NCP, needs_ipopt
 
 
 def discretize(m, scheme="LAGRANGE-RADAU"):
@@ -119,9 +117,7 @@ def test_control_value_helper():
     from pyomo_cvp import control_value
 
     m = discretize(racecar())
-    pyo.TransformationFactory("cvp.parameterize").apply_to(
-        m, var=m.u, contset=m.tau
-    )
+    pyo.TransformationFactory("cvp.parameterize").apply_to(m, var=m.u, contset=m.tau)
     for t in m.u:
         m.u[t] = 0.25
     assert control_value(m.u, 0.5) == pytest.approx(0.25)

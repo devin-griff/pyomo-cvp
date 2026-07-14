@@ -7,22 +7,24 @@ name = "pyomo-cvp"
 version = "0.4.0"
 description = "Control vector parameterization for pyomo.dae: piecewise control profiles by variable elimination instead of linking constraints."
 readme = "README.md"
-requires-python = ">=3.9"
-license = "Apache-2.0"
+requires-python = ">=3.10"
+license = "BSD-3-Clause"
 license-files = ["LICENSE"]
 authors = [{ name = "Devin Griffith", email = "dwg176@gmail.com" }]
 keywords = ["pyomo", "dae", "optimal-control", "dynamic-optimization", "control-vector-parameterization", "collocation"]
 classifiers = [
   "Development Status :: 3 - Alpha",
   "Intended Audience :: Science/Research",
-  "License :: OSI Approved :: Apache Software License",
+  "License :: OSI Approved :: BSD License",
   "Programming Language :: Python :: 3",
   "Topic :: Scientific/Engineering :: Mathematics",
 ]
-dependencies = ["pyomo>=6.7"]
+# Block.private_data() (used to stash per-block state) landed in Pyomo 6.8.1.
+dependencies = ["pyomo>=6.8.1"]
 
 [project.optional-dependencies]
-dev = ["pytest", "pyomo-ripopt"]
+dev = ["pytest", "pytest-cov", "pyomo-ripopt"]
+examples = ["numpy", "matplotlib", "jupyter"]
 
 [project.urls]
 Homepage = "https://github.com/devin-griff/pyomo-cvp"
@@ -34,3 +36,9 @@ packages = ["src/pyomo_cvp"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+
+# Mirrors Pyomo's own Black settings so formatting matches upstream exactly.
+[tool.black]
+line-length = 88
+skip-string-normalization = true
+skip-magic-trailing-comma = true

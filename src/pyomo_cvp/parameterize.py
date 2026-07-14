@@ -1,3 +1,5 @@
+# Copyright (c) 2026 Devin Griffith
+# SPDX-License-Identifier: BSD-3-Clause
 """The ``cvp.parameterize`` transformation and the ``declare_profile`` API.
 
 Reduces a control variable to a small set of free values over a discretized
@@ -26,13 +28,16 @@ Profiles
 """
 from bisect import bisect_left, bisect_right
 
+from pyomo.common.config import ConfigDict, ConfigValue
 from pyomo.core import (
     Constraint,
+    ConstraintList,
     Expression,
     Objective,
     Transformation,
     TransformationFactory,
     Var,
+    value as _value,
 )
 from pyomo.core.expr import replace_expressions
 from pyomo.core.expr.visitor import identify_variables
@@ -40,19 +45,63 @@ from pyomo.dae import ContinuousSet, DerivativeVar
 
 PROFILES = ("piecewise_constant", "piecewise_linear")
 
-_DECLARATION_ATTR = "_pyomo_cvp_profiles"
+#: Scope key under which pyomo-cvp stashes its per-block state through
+#: :meth:`Block.private_data`: the profile declarations before the transform
+#: runs, and the profile metadata that ``control_value`` reads afterward.
+_CVP_SCOPE = "pyomo_cvp"
+
+
+def _cvp_data(block, create=False):
+    """Return ``block``'s pyomo-cvp private-data namespace.
+
+    Parameters
+    ----------
+    block : BlockData
+        Block whose namespace is requested.
+    create : bool, optional
+        When True, allocate the namespace via :meth:`Block.private_data`.
+        When False (default), peek without side effect: return ``None`` if
+        the block holds no pyomo-cvp data, so scanning many blocks does not
+        stamp an empty namespace onto each.
+
+    Returns
+    -------
+    dict or None
+        The namespace, or ``None`` when ``create`` is False and none exists.
+    """
+    if create:
+        return block.private_data(_CVP_SCOPE)
+    store = getattr(block, "_private_data", None)
+    return store.get(_CVP_SCOPE) if store else None
 
 
 def declare_profile(*variables, wrt=None, profile="piecewise_constant"):
-    """Declare a control profile for one or more Vars over ContinuousSet
-    ``wrt`` (keyword-only). The profile settings apply to every variable in
-    the call: ``declare_profile(m.v1, m.v2, wrt=m.t)``.
+    """Declare a control-vector-parameterization profile for one or more Vars.
 
-    Inert metadata recorded on each variable's parent block; applied later
-    by ``TransformationFactory('cvp.parameterize').apply_to(model)``.
+    The declaration is inert metadata recorded on each variable's parent
+    block; it is applied later by
+    ``TransformationFactory('cvp.parameterize').apply_to(model)``. The same
+    profile settings apply to every variable in the call.
+
+    Parameters
+    ----------
+    *variables : Var
+        One or more control Vars, each indexed (once) by the ContinuousSet
+        ``wrt``. Example: ``declare_profile(m.v1, m.v2, wrt=m.t)``.
+    wrt : ContinuousSet
+        The time set the controls are parameterized over. Keyword-only.
+    profile : str or tuple, optional
+        ``'piecewise_constant'`` (default), ``'piecewise_linear'``, or
+        ``('reduced_collocation', k)``. See the module docstring.
+
+    Raises
+    ------
+    TypeError
+        If no control Var is given, if ``wrt`` is missing or passed
+        positionally, or if a ContinuousSet is passed as a control.
+    ValueError
+        If ``profile`` is not a recognized profile.
     """
-    from pyomo.dae import ContinuousSet
-
     if not variables:
         raise TypeError(
             "pyomo-cvp: declare_profile needs at least one control Var: "
@@ -65,9 +114,7 @@ def declare_profile(*variables, wrt=None, profile="piecewise_constant"):
                 "declare_profile(m.u, wrt=m.tau) instead of "
                 "declare_profile(m.u, m.tau)"
             )
-        raise TypeError(
-            "pyomo-cvp: wrt is required: declare_profile(m.u, wrt=m.tau)"
-        )
+        raise TypeError("pyomo-cvp: wrt is required: declare_profile(m.u, wrt=m.tau)")
     _validate_profile(profile)
     for var in variables:
         if isinstance(var, ContinuousSet):
@@ -76,14 +123,31 @@ def declare_profile(*variables, wrt=None, profile="piecewise_constant"):
                 "Var; wrt is keyword-only: declare_profile(m.u, wrt=m.tau)"
             )
         block = var.parent_block()
-        decls = getattr(block, _DECLARATION_ATTR, None)
-        if decls is None:
-            decls = []
-            setattr(block, _DECLARATION_ATTR, decls)
-        decls.append({"var": var, "wrt": wrt, "profile": profile})
+        store = _cvp_data(block, create=True)
+        store.setdefault("profiles", []).append(
+            {"var": var, "wrt": wrt, "profile": profile}
+        )
 
 
 def _validate_profile(profile):
+    """Normalize and validate a profile specifier.
+
+    Parameters
+    ----------
+    profile : str or tuple
+        A profile name or a ``('reduced_collocation', k)`` tuple.
+
+    Returns
+    -------
+    tuple
+        ``(mode, k)``: the profile name and the reduced-collocation order
+        (``k`` is ``None`` for the piecewise profiles).
+
+    Raises
+    ------
+    ValueError
+        If ``profile`` is not a recognized profile.
+    """
     if isinstance(profile, (tuple, list)):
         if (
             len(profile) == 2
@@ -106,24 +170,39 @@ def _validate_profile(profile):
 def control_value(var, t, index=()):
     """Evaluate a parameterized control at any time ``t``.
 
-    ``var`` is the (replaced) control component; ``index`` supplies any
-    non-time index components, in their original order. Works for every
-    profile: piecewise-constant lookup, piecewise-linear interpolation, or
-    the element's Lagrange polynomial for reduced collocation.
-    """
-    from pyomo.core import value as _value
+    Works for every profile: piecewise-constant lookup, piecewise-linear
+    interpolation, or the element's Lagrange polynomial for reduced
+    collocation.
 
-    info_map = getattr(var.parent_block(), "_pyomo_cvp_info", {})
+    Parameters
+    ----------
+    var : Var
+        The (already parameterized) control component.
+    t : float
+        A time in the control's domain ``[fe[0], fe[-1]]``.
+    index : tuple, optional
+        Any non-time index members, in their original order. Empty for a
+        control indexed only by time.
+
+    Returns
+    -------
+    float
+        The control value interpolated at ``t``.
+
+    Raises
+    ------
+    ValueError
+        If ``var`` has not been parameterized, or ``t`` is out of domain.
+    """
+    store = _cvp_data(var.parent_block())
+    info_map = (store or {}).get("info", {})
     if var.local_name not in info_map:
-        raise ValueError(
-            f"pyomo-cvp: '{var.name}' has not been parameterized."
-        )
+        raise ValueError(f"pyomo-cvp: '{var.name}' has not been parameterized.")
     info = info_map[var.local_name]
     fe, mode, pairs = info["fe"], info["mode"], info["pairs"]
     if not fe[0] <= t <= fe[-1]:
         raise ValueError(
-            f"pyomo-cvp: t={t} is outside the control's domain "
-            f"[{fe[0]}, {fe[-1]}]."
+            f"pyomo-cvp: t={t} is outside the control's domain " f"[{fe[0]}, {fe[-1]}]."
         )
     if t <= fe[0]:
         elem = 0
@@ -138,9 +217,12 @@ def control_value(var, t, index=()):
         plist = [(a, 1.0 - w), (b, w)]
     else:  # reduced_collocation: the element's free knots
         knots = sorted(
-            {ft for tt, pl in pairs.items()
-             for ft, _ in pl
-             if fe[elem] < tt <= fe[elem + 1] or (elem == 0 and tt <= fe[0])}
+            {
+                ft
+                for tt, pl in pairs.items()
+                for ft, _ in pl
+                if fe[elem] < tt <= fe[elem + 1] or (elem == 0 and tt <= fe[0])
+            }
         )
         knots = [ft for ft in knots if fe[elem] < ft <= fe[elem + 1]]
         plist = list(zip(knots, _lagrange_coeffs(t, knots)))
@@ -156,6 +238,21 @@ def control_value(var, t, index=()):
 
 
 def _lagrange_coeffs(t, knots):
+    """Lagrange interpolation weights at ``t`` for the given ``knots``.
+
+    Parameters
+    ----------
+    t : float
+        The evaluation point.
+    knots : sequence of float
+        The interpolation nodes.
+
+    Returns
+    -------
+    list of float
+        One weight per knot, in knot order; ``sum(w_i * f(knot_i))`` is the
+        interpolated value.
+    """
     coeffs = []
     for i in knots:
         c = 1.0
@@ -172,15 +269,59 @@ def _lagrange_coeffs(t, knots):
     "(pyomo-cvp).",
 )
 class ParameterizeTransformation(Transformation):
-    """Reduce a control to a profile's free values, by substitution."""
+    """Reduce a control to a profile's free values, by substitution.
 
-    def _apply_to(self, model, var=None, contset=None,
-                  profile="piecewise_constant", **kwds):
+    Invoke it two ways. With no options it applies every profile declared
+    with :func:`declare_profile`. With ``var`` and ``contset`` it
+    parameterizes a single control directly::
+
+        TransformationFactory('cvp.parameterize').apply_to(model)
+        TransformationFactory('cvp.parameterize').apply_to(
+            model, var=m.u, contset=m.t, profile='piecewise_linear')
+    """
+
+    CONFIG = ConfigDict("cvp.parameterize")
+    CONFIG.declare(
+        "var",
+        ConfigValue(
+            default=None,
+            description="Control Var to parameterize (paired with contset). "
+            "Omit both var and contset to apply declare_profile declarations.",
+        ),
+    )
+    CONFIG.declare(
+        "contset",
+        ConfigValue(
+            default=None, description="ContinuousSet the control is indexed over."
+        ),
+    )
+    CONFIG.declare(
+        "profile",
+        ConfigValue(
+            default="piecewise_constant",
+            description="'piecewise_constant', 'piecewise_linear', or "
+            "('reduced_collocation', k). Ignored in declaration mode.",
+        ),
+    )
+
+    def _apply_to(self, model, **kwds):
+        """Apply the parameterization in place; see the class docstring.
+
+        Parameters
+        ----------
+        model : Block
+            The already-discretized model to transform.
+        **kwds
+            ``var``, ``contset``, and ``profile`` (see ``CONFIG``). Unknown
+            options raise ``ValueError``.
+        """
+        config = self.CONFIG(kwds)
+        var, contset, profile = config.var, config.contset, config.profile
         if var is None and contset is None:
             found = 0
-            for block in model.block_data_objects(active=True,
-                                                  descend_into=True):
-                decls = getattr(block, _DECLARATION_ATTR, None)
+            for block in model.block_data_objects(active=True, descend_into=True):
+                store = _cvp_data(block)
+                decls = store.get("profiles") if store else None
                 if not decls:
                     continue
                 while decls:
@@ -197,6 +338,44 @@ class ParameterizeTransformation(Transformation):
         return self._parameterize(model, var, contset, profile)
 
     def _parameterize(self, model, var, contset, profile):
+        """Parameterize one control ``var`` over ``contset`` in place.
+
+        Replaces ``var`` with a Var indexed by the profile's free time
+        points, substitutes every eliminated copy out of all constraints,
+        objectives, and named expressions (the differential map on
+        expressions carrying a DerivativeVar, the algebraic map elsewhere),
+        and adds explicit bound constraints for eliminated copies whose
+        substitution is a non-convex combination of the free values. Records
+        profile metadata for :func:`control_value`.
+
+        Parameters
+        ----------
+        model : Block
+            The model being transformed.
+        var : Var
+            The control to parameterize.
+        contset : ContinuousSet
+            The discretized time set ``var`` is indexed over.
+        profile : str or tuple
+            The profile specifier (see :func:`declare_profile`).
+
+        Returns
+        -------
+        Block
+            ``model``, transformed in place.
+
+        Raises
+        ------
+        TypeError
+            If ``var`` or ``contset`` is missing or of the wrong type.
+        ValueError
+            If ``var`` is not indexed by ``contset`` exactly once, carries a
+            DerivativeVar, or a piecewise-constant control is referenced at
+            the final time.
+        RuntimeError
+            If ``contset`` is not discretized, or a generated bound-
+            constraint name collides with an existing component.
+        """
         mode, k = _validate_profile(profile)
         if var is None or contset is None:
             raise TypeError(
@@ -246,7 +425,7 @@ class ParameterizeTransformation(Transformation):
             return i if isinstance(i, tuple) else (i,)
 
         def with_t(full, t):
-            return full[:pos] + (t,) + full[pos + 1:]
+            return full[:pos] + (t,) + full[pos + 1 :]
 
         old = {as_tuple(i): var[i] for i in var}
         free_attrs = {}
@@ -257,7 +436,7 @@ class ParameterizeTransformation(Transformation):
         name = var.local_name
         parent = var.parent_block()
         parent.del_component(var)
-        newsets = subsets[:pos] + [free_times] + subsets[pos + 1:]
+        newsets = subsets[:pos] + [free_times] + subsets[pos + 1 :]
         any_dom = next(iter(free_attrs.values()))[0]
         new_var = Var(
             *newsets,
@@ -279,9 +458,7 @@ class ParameterizeTransformation(Transformation):
             if len(plist) == 1 and plist[0][1] == 1.0:
                 node = new_var[with_t(full, plist[0][0])]
             else:
-                node = sum(
-                    c * new_var[with_t(full, ft)] for ft, c in plist
-                )
+                node = sum(c * new_var[with_t(full, ft)] for ft, c in plist)
                 convex = all(-1e-12 <= c <= 1 + 1e-12 for _, c in plist)
                 if not convex and (vd.lb is not None or vd.ub is not None):
                     bound_rows.append((node, vd.lb, vd.ub))
@@ -361,13 +538,9 @@ class ParameterizeTransformation(Transformation):
                 e.set_value(replace_expressions(e.expr, submap_alg))
 
         if bound_rows:
-            from pyomo.core import ConstraintList
-
             clname = name + "_profile_bounds"
             if parent.find_component(clname) is not None:
-                raise RuntimeError(
-                    f"pyomo-cvp: component '{clname}' already exists."
-                )
+                raise RuntimeError(f"pyomo-cvp: component '{clname}' already exists.")
             cl = ConstraintList()
             parent.add_component(clname, cl)
             for node, lb, ub in bound_rows:
@@ -378,18 +551,48 @@ class ParameterizeTransformation(Transformation):
                 else:
                     cl.add(node <= ub)
 
-        info = getattr(parent, "_pyomo_cvp_info", None)
-        if info is None:
-            info = {}
-            setattr(parent, "_pyomo_cvp_info", info)
-        info[name] = {"mode": mode, "k": k, "fe": fe, "pos": pos,
-                      "pairs": pairs}
+        info = _cvp_data(parent, create=True).setdefault("info", {})
+        info[name] = {"mode": mode, "k": k, "fe": fe, "pos": pos, "pairs": pairs}
 
         return model
 
     @staticmethod
     def _profile_pairs(mode, k, fe, points, disc_info, contset):
-        """Map each time point to [(free_time, coeff), ...]."""
+        """Map each time point to its substitution ``[(free_time, coeff), ...]``.
+
+        For each discretized time point, gives the linear combination of free
+        control values the eliminated copy there is replaced by: a single
+        ``(free_time, 1.0)`` pair when the value stays free, or several pairs
+        (the interpolation weights) when it is eliminated.
+
+        Parameters
+        ----------
+        mode : str
+            The normalized profile name.
+        k : int or None
+            Reduced-collocation order, or ``None`` for the piecewise profiles.
+        fe : list of float
+            The finite-element boundaries.
+        points : list of float
+            All discretized time points, sorted.
+        disc_info : dict
+            ``contset.get_discretization_info()``.
+        contset : ContinuousSet
+            The discretized time set.
+
+        Returns
+        -------
+        dict
+            Maps each time point to a list of ``(free_time, coeff)`` pairs.
+
+        Raises
+        ------
+        RuntimeError
+            If a reduced-collocation profile is used without a collocation
+            discretization.
+        ValueError
+            If the reduced-collocation order exceeds the discretization ncp.
+        """
         pairs = {}
 
         def element_of(t):

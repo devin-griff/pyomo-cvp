@@ -1,3 +1,5 @@
+# Copyright (c) 2026 Devin Griffith
+# SPDX-License-Identifier: BSD-3-Clause
 """Phase 0: registration smoke tests."""
 import pytest
 import pyomo.environ as pyo
@@ -28,12 +30,13 @@ def test_partial_args_rejected():
 
 def test_declare_profile_records():
     from pyomo.dae import ContinuousSet
+    from pyomo_cvp.parameterize import _cvp_data
 
     m = pyo.ConcreteModel()
     m.tau = ContinuousSet(bounds=(0, 1))
     m.u = pyo.Var(m.tau)
     pyomo_cvp.declare_profile(m.u, wrt=m.tau)
-    decls = getattr(m, "_pyomo_cvp_profiles")
+    decls = _cvp_data(m)["profiles"]
     assert len(decls) == 1 and decls[0]["var"] is m.u
 
 

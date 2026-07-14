@@ -4,6 +4,27 @@ All notable changes to this project are documented here. The format is based
 on [Keep a Changelog](https://keepachangelog.com/), and the project adheres
 to [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Changed
+
+- Relicensed from Apache-2.0 to BSD-3-Clause, matching the Pyomo and
+  scientific-Python ecosystem this builds on.
+- Minimum Pyomo is now 6.8.1 and minimum Python is now 3.10. The transform
+  stores its per-block state through `Block.private_data` (added in Pyomo
+  6.8.1) instead of ad-hoc block attributes.
+- The `cvp.parameterize` transformation validates its options through a
+  `ConfigDict`, so an unknown keyword option now raises `ValueError` instead
+  of being silently ignored.
+
+### Internal
+
+- Aligned with Pyomo's contribution conventions: NumPy-style docstrings on the
+  public and private API, Black formatting with Pyomo's settings, per-file BSD
+  license headers, a shared test-helper module (tests no longer import one
+  another), and coverage, a minimum-dependency check, and a spell-check step in
+  CI.
+
 ## [0.4.0] - 2026-07-13
 
 ### Fixed
