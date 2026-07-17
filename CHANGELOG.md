@@ -6,6 +6,17 @@ to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.6.1] - 2026-07-17
+
+### Added
+
+- `final_node` option on `cvp.parameterize` (piecewise-constant only):
+  `'remove'` (default, the terminal-horizon convention) errors on a control
+  reference at the final grid point, where no move exists; `'keep'` (the
+  horizon-continues convention) defines the control there as the held last
+  move, so a DAE's algebraic equations at the final collocation point
+  resolve like the collocation equation beside them.
+
 ## [0.6.0] - 2026-07-16
 
 ### Changed

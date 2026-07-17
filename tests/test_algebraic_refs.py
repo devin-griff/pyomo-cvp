@@ -96,10 +96,26 @@ def test_pwc_path_constraint_no_shift():
 
 
 def test_pwc_final_node_reference_errors():
-    # an algebraic reference to the final-node control names no element.
+    # the terminal-horizon default: no move exists at the final node, so an
+    # algebraic reference to the control there is a modeling error.
     m = discretize(build("piecewise_constant", obj="all"))
     with pytest.raises(ValueError, match="final time"):
         pyo.TransformationFactory("cvp.parameterize").apply_to(m)
+
+
+def test_pwc_final_node_keep_resolves_to_the_held_move():
+    # the horizon-continues convention: the control at the final node is the
+    # held last move, so a DAE's algebraic equations there (the last
+    # element's equations) resolve like the collocation equation beside them.
+    m = discretize(build("piecewise_constant", obj="all"))
+    pyo.TransformationFactory("cvp.parameterize").apply_to(m, final_node="keep")
+    assert urefs(m.obj.expr)[-1] == f"u[{N - 1}]"  # the last element start
+
+
+def test_final_node_option_is_validated():
+    m = discretize(build("piecewise_constant", obj="elements"))
+    with pytest.raises(ValueError, match="or 'keep'"):
+        pyo.TransformationFactory("cvp.parameterize").apply_to(m, final_node="drop")
 
 
 @pytest.mark.parametrize("scheme", ["LAGRANGE-RADAU", "LAGRANGE-LEGENDRE", "FD"])

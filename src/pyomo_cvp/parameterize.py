@@ -298,6 +298,18 @@ class ParameterizeTransformation(Transformation):
         ),
     )
     CONFIG.declare(
+        "final_node",
+        ConfigValue(
+            default="remove",
+            description="Piecewise-constant only: what exists at the final "
+            "grid point. 'remove' (default, the terminal-horizon "
+            "convention): no move exists there and a reference to the "
+            "control at the final point errors. 'keep' (the "
+            "horizon-continues convention): the control is defined there as "
+            "the held last move, and references resolve to it.",
+        ),
+    )
+    CONFIG.declare(
         "profile",
         ConfigValue(
             default="piecewise_constant",
@@ -320,6 +332,11 @@ class ParameterizeTransformation(Transformation):
         """
         config = self.CONFIG(kwds)
         var, contset, profile = config.var, config.contset, config.profile
+        if config.final_node not in ("remove", "keep"):
+            raise ValueError(
+                f"pyomo-cvp: final_node must be 'remove' or 'keep'; got "
+                f"{config.final_node!r}."
+            )
         if var is None and contset is None:
             found = 0
             for block in model.block_data_objects(active=True, descend_into=True):
@@ -329,7 +346,9 @@ class ParameterizeTransformation(Transformation):
                     continue
                 while decls:
                     d = decls.pop(0)
-                    self._parameterize(model, d["var"], d["wrt"], d["profile"])
+                    self._parameterize(
+                        model, d["var"], d["wrt"], d["profile"], config.final_node
+                    )
                     found += 1
             if found == 0:
                 raise RuntimeError(
@@ -338,9 +357,9 @@ class ParameterizeTransformation(Transformation):
                     "they were already applied)."
                 )
             return model
-        return self._parameterize(model, var, contset, profile)
+        return self._parameterize(model, var, contset, profile, config.final_node)
 
-    def _parameterize(self, model, var, contset, profile):
+    def _parameterize(self, model, var, contset, profile, final_node="remove"):
         """Parameterize one control ``var`` over ``contset`` in place.
 
         Replaces ``var`` with a Var indexed by the profile's free time
@@ -479,9 +498,11 @@ class ParameterizeTransformation(Transformation):
         # element ENDING at the node (left-continuous, correct for the
         # collocation equation there), the algebraic map the element STARTING
         # at it. For the continuous profiles the maps coincide. The final node
-        # starts no element, so an algebraic reference to it (which cannot mean
-        # a real control) is collected in `forbidden` and raised, rather than
-        # silently mapped to the last element and double-counted.
+        # starts no element: on a terminal horizon (final_node='remove', the
+        # default) no move exists there, so a reference is collected in
+        # `forbidden` and raised; when the horizon continues past the grid
+        # (final_node='keep'), the control there is the held last move and
+        # references resolve to it.
         submap_alg = submap
         forbidden = {}
         if mode == "piecewise_constant":
@@ -489,9 +510,26 @@ class ParameterizeTransformation(Transformation):
             for full, vd in old.items():
                 j = bisect_right(fe, full[pos]) - 1
                 if j >= len(fe) - 1:
-                    forbidden[id(vd)] = vd.name
+                    if final_node == "keep":
+                        submap_alg[id(vd)] = new_var[with_t(full, fe[-2])]
+                    else:
+                        forbidden[id(vd)] = vd.name
                 else:
                     submap_alg[id(vd)] = new_var[with_t(full, fe[j])]
+
+        def check_final(expr, where):
+            for v in identify_variables(expr):
+                nm = forbidden.get(id(v))
+                if nm is not None:
+                    raise ValueError(
+                        f"pyomo-cvp: {where} references '{nm}', the control at "
+                        f"the final time. A piecewise-constant control has one "
+                        f"value per element (indexed by the element starts, "
+                        f"0..N-1); the final node carries no move on a "
+                        f"terminal horizon. Reference controls over the "
+                        f"elements, or pass final_node='keep' if the horizon "
+                        f"continues past the grid."
+                    )
 
         deriv_ids = {
             id(d)
@@ -502,18 +540,6 @@ class ParameterizeTransformation(Transformation):
 
         def is_differential(expr):
             return any(id(v) in deriv_ids for v in identify_variables(expr))
-
-        def check_final(expr, where):
-            for v in identify_variables(expr):
-                nm = forbidden.get(id(v))
-                if nm is not None:
-                    raise ValueError(
-                        f"pyomo-cvp: {where} references '{nm}', the control at "
-                        f"the final time. A piecewise-constant control has one "
-                        f"value per element (indexed by the element starts, "
-                        f"0..N-1); the final node carries no control. Reference "
-                        f"controls over the elements, not the final boundary."
-                    )
 
         for c in model.component_data_objects(
             Constraint, active=True, descend_into=True
