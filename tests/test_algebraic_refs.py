@@ -95,27 +95,57 @@ def test_pwc_path_constraint_no_shift():
         assert urefs(m.cap[k].body) == [f"u[{k}]"]
 
 
-def test_pwc_final_node_reference_errors():
+@pytest.mark.parametrize("scheme", ["LAGRANGE-RADAU", "LAGRANGE-LEGENDRE", "FD"])
+def test_pwc_final_node_reference_errors(scheme):
     # the terminal-horizon default: no move exists at the final node, so an
-    # algebraic reference to the control there is a modeling error.
-    m = discretize(build("piecewise_constant", obj="all"))
+    # algebraic reference to the control there is a modeling error. The
+    # convention comes from the profile, not the scheme.
+    m = discretize(build("piecewise_constant", obj="all"), scheme)
     with pytest.raises(ValueError, match="final time"):
         pyo.TransformationFactory("cvp.parameterize").apply_to(m)
 
 
-def test_pwc_final_node_keep_resolves_to_the_held_move():
-    # the horizon-continues convention: the control at the final node is the
-    # held last move, so a DAE's algebraic equations there (the last
-    # element's equations) resolve like the collocation equation beside them.
-    m = discretize(build("piecewise_constant", obj="all"))
-    pyo.TransformationFactory("cvp.parameterize").apply_to(m, final_node="keep")
+@pytest.mark.parametrize("scheme", ["LAGRANGE-RADAU", "LAGRANGE-LEGENDRE", "FD"])
+def test_pwc_final_node_keep_resolves_to_the_held_move(scheme):
+    # the horizon-continues convention, declared per profile: the control at
+    # the final node is the held last move, so a DAE's algebraic equations
+    # there (the last element's equations) resolve like the collocation
+    # equation beside them.
+    m = build("piecewise_constant", obj="all")
+    declare_profile(m.u, wrt=m.i, profile="piecewise_constant", final_node="keep")
+    m = discretize(m, scheme)
+    pyo.TransformationFactory("cvp.parameterize").apply_to(m)
     assert urefs(m.obj.expr)[-1] == f"u[{N - 1}]"  # the last element start
 
 
-def test_final_node_option_is_validated():
+def test_final_node_keep_via_the_explicit_form():
+    m = discretize(build("piecewise_constant", obj="all"))
+    pyo.TransformationFactory("cvp.parameterize").apply_to(
+        m, var=m.u, contset=m.i, profile="piecewise_constant", final_node="keep"
+    )
+    assert urefs(m.obj.expr)[-1] == f"u[{N - 1}]"
+
+
+def test_redeclaration_replaces_the_pending_declaration():
+    # last declaration wins: the sanctioned way to update a declaration's
+    # convention before it is applied.
+    m = build("piecewise_constant", obj="all")
+    declare_profile(m.u, wrt=m.i, profile="piecewise_constant", final_node="keep")
+    m = discretize(m)
+    pyo.TransformationFactory("cvp.parameterize").apply_to(m)  # one pass only
+    assert urefs(m.obj.expr)[-1] == f"u[{N - 1}]"
+
+
+def test_final_node_call_option_errors_in_declaration_mode():
     m = discretize(build("piecewise_constant", obj="elements"))
+    with pytest.raises(ValueError, match="declaration mode"):
+        pyo.TransformationFactory("cvp.parameterize").apply_to(m, final_node="keep")
+
+
+def test_final_node_is_validated():
+    m = build("piecewise_constant")
     with pytest.raises(ValueError, match="or 'keep'"):
-        pyo.TransformationFactory("cvp.parameterize").apply_to(m, final_node="drop")
+        declare_profile(m.u, wrt=m.i, profile="piecewise_constant", final_node="drop")
 
 
 @pytest.mark.parametrize("scheme", ["LAGRANGE-RADAU", "LAGRANGE-LEGENDRE", "FD"])

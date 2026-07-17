@@ -79,13 +79,16 @@ def _cvp_data(block, create=False):
     return store.get(_CVP_SCOPE) if store else None
 
 
-def declare_profile(*variables, wrt=None, profile="piecewise_constant"):
+def declare_profile(
+    *variables, wrt=None, profile="piecewise_constant", final_node="remove"
+):
     """Declare a control-vector-parameterization profile for one or more Vars.
 
     The declaration is inert metadata recorded on each variable's parent
     block; it is applied later by
     ``TransformationFactory('cvp.parameterize').apply_to(model)``. The same
-    profile settings apply to every variable in the call.
+    profile settings apply to every variable in the call. Re-declaring a
+    variable replaces its pending declaration: the last declaration wins.
 
     Parameters
     ----------
@@ -98,6 +101,12 @@ def declare_profile(*variables, wrt=None, profile="piecewise_constant"):
         ``'piecewise_constant'`` (default), ``'piecewise_linear'``,
         ``'collocation'``, or ``('collocation', k)``. See the module
         docstring.
+    final_node : str, optional
+        Piecewise-constant only: what exists at the final grid point.
+        ``'remove'`` (default, the terminal-horizon convention): no move
+        exists there, and a reference to the control at the final point
+        errors. ``'keep'`` (the horizon-continues convention): the control
+        there is the held last move, and references resolve to it.
 
     Raises
     ------
@@ -105,7 +114,8 @@ def declare_profile(*variables, wrt=None, profile="piecewise_constant"):
         If no control Var is given, if ``wrt`` is missing or passed
         positionally, or if a ContinuousSet is passed as a control.
     ValueError
-        If ``profile`` is not a recognized profile.
+        If ``profile`` is not a recognized profile, or ``final_node`` is not
+        ``'remove'`` or ``'keep'``.
     """
     if not variables:
         raise TypeError(
@@ -121,6 +131,7 @@ def declare_profile(*variables, wrt=None, profile="piecewise_constant"):
             )
         raise TypeError("pyomo-cvp: wrt is required: declare_profile(m.u, wrt=m.tau)")
     _validate_profile(profile)
+    _validate_final_node(final_node)
     for var in variables:
         if isinstance(var, ContinuousSet):
             raise TypeError(
@@ -129,8 +140,18 @@ def declare_profile(*variables, wrt=None, profile="piecewise_constant"):
             )
         block = var.parent_block()
         store = _cvp_data(block, create=True)
-        store.setdefault("profiles", []).append(
-            {"var": var, "wrt": wrt, "profile": profile}
+        decls = store.setdefault("profiles", [])
+        decls[:] = [d for d in decls if d["var"] is not var]  # last wins
+        decls.append(
+            {"var": var, "wrt": wrt, "profile": profile, "final_node": final_node}
+        )
+
+
+def _validate_final_node(final_node):
+    """Validate a final_node specifier."""
+    if final_node not in ("remove", "keep"):
+        raise ValueError(
+            f"pyomo-cvp: final_node must be 'remove' or 'keep'; got " f"{final_node!r}."
         )
 
 
@@ -300,13 +321,15 @@ class ParameterizeTransformation(Transformation):
     CONFIG.declare(
         "final_node",
         ConfigValue(
-            default="remove",
-            description="Piecewise-constant only: what exists at the final "
-            "grid point. 'remove' (default, the terminal-horizon "
-            "convention): no move exists there and a reference to the "
-            "control at the final point errors. 'keep' (the "
-            "horizon-continues convention): the control is defined there as "
-            "the held last move, and references resolve to it.",
+            default=None,
+            description="Piecewise-constant only, explicit form only: what "
+            "exists at the final grid point. 'remove' (the default, the "
+            "terminal-horizon convention): no move exists there and a "
+            "reference to the control at the final point errors. 'keep' "
+            "(the horizon-continues convention): the control is defined "
+            "there as the held last move, and references resolve to it. In "
+            "declaration mode each declaration carries its own final_node "
+            "(see declare_profile), and passing this option errors.",
         ),
     )
     CONFIG.declare(
@@ -332,12 +355,16 @@ class ParameterizeTransformation(Transformation):
         """
         config = self.CONFIG(kwds)
         var, contset, profile = config.var, config.contset, config.profile
-        if config.final_node not in ("remove", "keep"):
-            raise ValueError(
-                f"pyomo-cvp: final_node must be 'remove' or 'keep'; got "
-                f"{config.final_node!r}."
-            )
+        if config.final_node is not None:
+            _validate_final_node(config.final_node)
         if var is None and contset is None:
+            if config.final_node is not None:
+                raise ValueError(
+                    "pyomo-cvp: final_node is set on the declaration in "
+                    "declaration mode (declare_profile(..., final_node=...)); "
+                    "the call option is for the explicit form (var=, "
+                    "contset=)."
+                )
             found = 0
             for block in model.block_data_objects(active=True, descend_into=True):
                 store = _cvp_data(block)
@@ -347,7 +374,11 @@ class ParameterizeTransformation(Transformation):
                 while decls:
                     d = decls.pop(0)
                     self._parameterize(
-                        model, d["var"], d["wrt"], d["profile"], config.final_node
+                        model,
+                        d["var"],
+                        d["wrt"],
+                        d["profile"],
+                        d.get("final_node", "remove"),
                     )
                     found += 1
             if found == 0:
@@ -357,7 +388,9 @@ class ParameterizeTransformation(Transformation):
                     "they were already applied)."
                 )
             return model
-        return self._parameterize(model, var, contset, profile, config.final_node)
+        return self._parameterize(
+            model, var, contset, profile, config.final_node or "remove"
+        )
 
     def _parameterize(self, model, var, contset, profile, final_node="remove"):
         """Parameterize one control ``var`` over ``contset`` in place.

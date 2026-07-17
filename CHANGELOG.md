@@ -6,6 +6,19 @@ to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.6.2] - 2026-07-17
+
+### Changed
+
+- `final_node` moves to the declaration: `declare_profile(..., final_node=...)`
+  records it per control, so one `parameterize` call can mix conventions.
+  Re-declaring a variable replaces its pending declaration (last wins), the
+  sanctioned way to update a convention before it is applied. The call-level
+  option remains for the explicit form only (`var=`, `contset=`); passing it
+  in declaration mode errors. The final-node tests run under Radau,
+  Legendre, and finite differences: the convention comes from the profile,
+  not the scheme.
+
 ## [0.6.1] - 2026-07-17
 
 ### Added
