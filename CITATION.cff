@@ -8,8 +8,8 @@ abstract: >
   no leftover copies.
 type: software
 license: BSD-3-Clause
-version: 0.5.0
-date-released: 2026-07-14
+version: 0.6.0
+date-released: 2026-07-16
 repository-code: "https://github.com/devin-griff/pyomo-cvp"
 url: "https://pypi.org/project/pyomo-cvp/"
 authors:

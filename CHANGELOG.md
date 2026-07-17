@@ -6,6 +6,8 @@ to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.6.0] - 2026-07-16
+
 ### Changed
 
 - Renamed the `('reduced_collocation', k)` profile to `('collocation', k)`:
@@ -104,7 +106,8 @@ First release (alpha).
 - Guards: not-yet-discretized set, DerivativeVar-attached control, double
   application, reduced collocation without collocation or with k > ncp.
 
-[Unreleased]: https://github.com/devin-griff/pyomo-cvp/compare/v0.5.0...HEAD
+[Unreleased]: https://github.com/devin-griff/pyomo-cvp/compare/v0.6.0...HEAD
+[0.6.0]: https://github.com/devin-griff/pyomo-cvp/compare/v0.5.0...v0.6.0
 [0.5.0]: https://github.com/devin-griff/pyomo-cvp/compare/v0.4.0...v0.5.0
 [0.4.0]: https://github.com/devin-griff/pyomo-cvp/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/devin-griff/pyomo-cvp/compare/v0.2.0...v0.3.0
