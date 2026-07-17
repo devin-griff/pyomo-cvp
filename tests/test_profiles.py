@@ -1,6 +1,6 @@
 # Copyright (c) 2026 Devin Griffith
 # SPDX-License-Identifier: BSD-3-Clause
-"""Phase 4: piecewise_linear and reduced_collocation profiles."""
+"""Phase 4: piecewise_linear and collocation profiles."""
 import pytest
 import pyomo.environ as pyo
 
@@ -46,7 +46,7 @@ def test_piecewise_linear_matches_handbuilt():
 
 @needs_ipopt
 @pytest.mark.parametrize("scheme", ["LAGRANGE-RADAU", "LAGRANGE-LEGENDRE"])
-def test_reduced_collocation_matches_rcp(scheme):
+def test_collocation_matches_rcp(scheme):
     k = 2
     m1 = racecar()
     d = pyo.TransformationFactory("dae.collocation")
@@ -57,7 +57,7 @@ def test_reduced_collocation_matches_rcp(scheme):
 
     m2 = discretize(racecar(), scheme=scheme)
     pyo.TransformationFactory("cvp.parameterize").apply_to(
-        m2, var=m2.u, contset=m2.tau, profile=("reduced_collocation", k)
+        m2, var=m2.u, contset=m2.tau, profile=("collocation", k)
     )
     assert len(m2.u) == NFE * k
     # variable bounds on eliminated copies survive as profile-bound rows
@@ -74,12 +74,12 @@ def test_reduced_collocation_matches_rcp(scheme):
 
 
 @needs_ipopt
-def test_reduced_collocation_respects_bounds():
+def test_collocation_respects_bounds():
     from pyomo_cvp import control_value
 
     m = discretize(racecar())
     pyo.TransformationFactory("cvp.parameterize").apply_to(
-        m, var=m.u, contset=m.tau, profile=("reduced_collocation", 2)
+        m, var=m.u, contset=m.tau, profile=("collocation", 2)
     )
     r = pyo.SolverFactory("ipopt").solve(m)
     assert r.solver.termination_condition == pyo.TerminationCondition.optimal
@@ -88,21 +88,40 @@ def test_reduced_collocation_respects_bounds():
         assert -3 - 1e-6 <= u <= 1 + 1e-6
 
 
-def test_reduced_collocation_guards():
+def test_collocation_guards():
     m = racecar()
     pyo.TransformationFactory("dae.finite_difference").apply_to(
         m, nfe=NFE, scheme="BACKWARD"
     )
     with pytest.raises(RuntimeError, match="requires a collocation"):
         pyo.TransformationFactory("cvp.parameterize").apply_to(
-            m, var=m.u, contset=m.tau, profile=("reduced_collocation", 2)
+            m, var=m.u, contset=m.tau, profile=("collocation", 2)
         )
 
     m2 = discretize(racecar())
     with pytest.raises(ValueError, match="exceeds"):
         pyo.TransformationFactory("cvp.parameterize").apply_to(
-            m2, var=m2.u, contset=m2.tau, profile=("reduced_collocation", NCP + 1)
+            m2, var=m2.u, contset=m2.tau, profile=("collocation", NCP + 1)
         )
+
+
+@needs_ipopt
+def test_plain_collocation_resolves_to_ncp():
+    m1 = discretize(racecar())
+    pyo.TransformationFactory("cvp.parameterize").apply_to(
+        m1, var=m1.u, contset=m1.tau, profile="collocation"
+    )
+    assert len(m1.u) == NFE * NCP
+    r1 = pyo.SolverFactory("ipopt").solve(m1)
+    assert r1.solver.termination_condition == pyo.TerminationCondition.optimal
+
+    m2 = discretize(racecar())
+    pyo.TransformationFactory("cvp.parameterize").apply_to(
+        m2, var=m2.u, contset=m2.tau, profile=("collocation", NCP)
+    )
+    r2 = pyo.SolverFactory("ipopt").solve(m2)
+    assert r2.solver.termination_condition == pyo.TerminationCondition.optimal
+    assert pyo.value(m1.tf) == pytest.approx(pyo.value(m2.tf), rel=1e-8)
 
 
 def test_unknown_tuple_profile():

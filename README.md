@@ -66,9 +66,11 @@ difference. Controls may carry additional (non-time) indices.
   control).
 - `'piecewise_linear'` --- one free value per element boundary, continuous,
   interior points interpolated.
-- `('reduced_collocation', k)` --- k free values per element (the last k
-  collocation points), Lagrange interpolation elsewhere; the elimination
-  form of `reduce_collocation_points(ncp=k)`.
+- `'collocation'` or `('collocation', k)`: the control is the element's
+  collocation polynomial, with k free values per element (the last k
+  collocation points, and k = ncp for the plain form) and Lagrange
+  interpolation elsewhere. The elimination form of
+  `reduce_collocation_points(ncp=k)`.
 
 ## Examples
 

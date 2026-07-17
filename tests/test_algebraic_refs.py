@@ -13,7 +13,7 @@ expressions resolve a control reference to the element the reference sits in.
 The final node starts no element, so an algebraic reference to it errors
 instead of double-counting the last element. Only the discontinuous
 piecewise_constant profile is affected; piecewise_linear and
-reduced_collocation are unchanged (their maps already coincide).
+collocation are unchanged (their maps already coincide).
 """
 import re
 
@@ -113,8 +113,8 @@ def test_pwl_algebraic_unchanged(scheme):
 
 @pytest.mark.parametrize("scheme", ["LAGRANGE-RADAU", "LAGRANGE-LEGENDRE"])
 def test_rcp_algebraic_unchanged(scheme):
-    # reduced_collocation: the control is a per-element polynomial, so an
+    # collocation: the control is a per-element polynomial, so an
     # algebraic reference resolves to the polynomial value and does not error.
-    m = discretize(build(("reduced_collocation", 2), obj="elements"), scheme)
+    m = discretize(build(("collocation", 2), obj="elements"), scheme)
     pyo.TransformationFactory("cvp.parameterize").apply_to(m)  # must not raise
     assert urefs(m.obj.expr)

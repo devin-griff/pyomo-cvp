@@ -6,6 +6,15 @@ to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Changed
+
+- Renamed the `('reduced_collocation', k)` profile to `('collocation', k)`:
+  with k = ncp nothing is reduced, and the profile's meaning is the control
+  as the element's collocation polynomial. The plain string `'collocation'`
+  is now accepted and resolves k to the discretization's ncp at transform
+  time. Breaking rename with no deprecation shim: the old name raises
+  `ValueError`.
+
 ## [0.5.0] - 2026-07-14
 
 ### Changed

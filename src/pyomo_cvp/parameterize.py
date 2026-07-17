@@ -20,9 +20,13 @@ Profiles
     One free value per element boundary (nfe + 1 values), continuous, with
     interior points substituted by linear interpolation between the two
     surrounding boundary values.
-``('reduced_collocation', k)``
+``'collocation'``
+    The control is the element's collocation polynomial: one free value per
+    collocation point (k resolves to the discretization's ncp), with the
+    element-boundary copies substituted by the polynomial's value there.
+``('collocation', k)``
     k free values per element, at the element's last k collocation points,
-    with the remaining points substituted by Lagrange interpolation --- the
+    with the remaining points substituted by Lagrange interpolation: the
     elimination form of ``reduce_collocation_points(ncp=k)``. Requires a
     collocation discretization with k <= ncp.
 """
@@ -43,7 +47,7 @@ from pyomo.core.expr import replace_expressions
 from pyomo.core.expr.visitor import identify_variables
 from pyomo.dae import ContinuousSet, DerivativeVar
 
-PROFILES = ("piecewise_constant", "piecewise_linear")
+PROFILES = ("piecewise_constant", "piecewise_linear", "collocation")
 
 #: Scope key under which pyomo-cvp stashes its per-block state through
 #: :meth:`Block.private_data`: the profile declarations before the transform
@@ -91,8 +95,9 @@ def declare_profile(*variables, wrt=None, profile="piecewise_constant"):
     wrt : ContinuousSet
         The time set the controls are parameterized over. Keyword-only.
     profile : str or tuple, optional
-        ``'piecewise_constant'`` (default), ``'piecewise_linear'``, or
-        ``('reduced_collocation', k)``. See the module docstring.
+        ``'piecewise_constant'`` (default), ``'piecewise_linear'``,
+        ``'collocation'``, or ``('collocation', k)``. See the module
+        docstring.
 
     Raises
     ------
@@ -135,13 +140,14 @@ def _validate_profile(profile):
     Parameters
     ----------
     profile : str or tuple
-        A profile name or a ``('reduced_collocation', k)`` tuple.
+        A profile name or a ``('collocation', k)`` tuple.
 
     Returns
     -------
     tuple
-        ``(mode, k)``: the profile name and the reduced-collocation order
-        (``k`` is ``None`` for the piecewise profiles).
+        ``(mode, k)``: the profile name and the collocation order. ``k`` is
+        ``None`` for the piecewise profiles, and for plain ``'collocation'``,
+        where it resolves to the discretization's ncp at transform time.
 
     Raises
     ------
@@ -149,20 +155,16 @@ def _validate_profile(profile):
         If ``profile`` is not a recognized profile.
     """
     if isinstance(profile, (tuple, list)):
-        if (
-            len(profile) == 2
-            and profile[0] == "reduced_collocation"
-            and int(profile[1]) >= 1
-        ):
-            return "reduced_collocation", int(profile[1])
+        if len(profile) == 2 and profile[0] == "collocation" and int(profile[1]) >= 1:
+            return "collocation", int(profile[1])
         raise ValueError(
             f"pyomo-cvp: unknown profile {profile!r}; tuple profiles must be "
-            f"('reduced_collocation', k) with k >= 1."
+            f"('collocation', k) with k >= 1."
         )
     if profile not in PROFILES:
         raise ValueError(
             f"pyomo-cvp: unknown profile {profile!r}; supported: "
-            f"{PROFILES + (('reduced_collocation', 'k'),)}"
+            f"{PROFILES + (('collocation', 'k'),)}"
         )
     return profile, None
 
@@ -215,7 +217,7 @@ def control_value(var, t, index=()):
         a, b = fe[elem], fe[elem + 1]
         w = (t - a) / (b - a)
         plist = [(a, 1.0 - w), (b, w)]
-    else:  # reduced_collocation: the element's free knots
+    else:  # collocation: the element's free knots
         knots = sorted(
             {
                 ft
@@ -299,8 +301,9 @@ class ParameterizeTransformation(Transformation):
         "profile",
         ConfigValue(
             default="piecewise_constant",
-            description="'piecewise_constant', 'piecewise_linear', or "
-            "('reduced_collocation', k). Ignored in declaration mode.",
+            description="'piecewise_constant', 'piecewise_linear', "
+            "'collocation', or ('collocation', k). Ignored in declaration "
+            "mode.",
         ),
     )
 
@@ -570,7 +573,8 @@ class ParameterizeTransformation(Transformation):
         mode : str
             The normalized profile name.
         k : int or None
-            Reduced-collocation order, or ``None`` for the piecewise profiles.
+            Collocation order. ``None`` for the piecewise profiles, and for
+            plain ``'collocation'``, where it resolves to ncp.
         fe : list of float
             The finite-element boundaries.
         points : list of float
@@ -588,10 +592,10 @@ class ParameterizeTransformation(Transformation):
         Raises
         ------
         RuntimeError
-            If a reduced-collocation profile is used without a collocation
+            If a collocation profile is used without a collocation
             discretization.
         ValueError
-            If the reduced-collocation order exceeds the discretization ncp.
+            If the collocation order exceeds the discretization ncp.
         """
         pairs = {}
 
@@ -621,16 +625,18 @@ class ParameterizeTransformation(Transformation):
                     pairs[t] = [(a, 1.0 - w), (b, w)]
             return pairs
 
-        # reduced_collocation
+        # collocation
         ncp = disc_info.get("ncp")
         if ncp is None:
             raise RuntimeError(
-                "pyomo-cvp: ('reduced_collocation', k) requires a collocation "
+                "pyomo-cvp: the 'collocation' profile requires a collocation "
                 "discretization (dae.collocation), not finite differences."
             )
+        if k is None:
+            k = ncp
         if k > ncp:
             raise ValueError(
-                f"pyomo-cvp: reduced_collocation k={k} exceeds the "
+                f"pyomo-cvp: collocation k={k} exceeds the "
                 f"discretization's ncp={ncp}."
             )
         scheme = disc_info.get("scheme", "")
