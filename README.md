@@ -114,7 +114,7 @@ If you use this package, please also cite the pyomo.dae framework it builds on:
 pyomo-cvp stands alone, but it is also the control-parameterization layer of
 [DRTO](https://github.com/devin-griff/drto), a unified framework for dynamic
 real-time optimization (NMPC, moving horizon estimation, and steady-state
-RTO) built on Pyomo. In DRTO, `declare_control(m.u, profile=...)` delegates
+RTO) built on Pyomo. In DRTO, `drto.control(m.u, profile=...)` delegates
 to this package, so a declared model gets its control profiles without
 calling pyomo-cvp directly. If you are parameterizing controls for a
 receding-horizon controller, DRTO may be the layer you actually want.

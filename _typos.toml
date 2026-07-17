@@ -4,3 +4,7 @@
 # Executed-notebook outputs carry base64 blobs and random tokens that trip the
 # checker; the notebook source prose is reviewed by eye instead.
 extend-exclude = ["examples/*.ipynb"]
+
+[default.extend-words]
+# real-time optimization, not a typo of "TO"
+RTO = "RTO"
