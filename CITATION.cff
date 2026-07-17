@@ -1,0 +1,23 @@
+cff-version: 1.2.0
+message: "If you use pyomo-cvp in academic work, please cite it as below."
+title: "pyomo-cvp: control vector parameterization for pyomo.dae"
+abstract: >
+  Control vector parameterization for pyomo.dae models by variable
+  elimination: piecewise control profiles are reduced to their free values
+  and every other copy is substituted out, with no linking constraints and
+  no leftover copies.
+type: software
+license: BSD-3-Clause
+version: 0.5.0
+date-released: 2026-07-14
+repository-code: "https://github.com/devin-griff/pyomo-cvp"
+url: "https://pypi.org/project/pyomo-cvp/"
+authors:
+  - family-names: Griffith
+    given-names: Devin
+keywords:
+  - pyomo
+  - dynamic optimization
+  - optimal control
+  - control vector parameterization
+  - collocation
