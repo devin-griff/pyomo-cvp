@@ -13,7 +13,7 @@ Profiles
 --------
 ``'piecewise_constant'``
     One free value per finite element, indexed by the element's START time
-    (u[t0] exists; the final time carries no control). Element i owns the
+    (u[t0] exists; the final time carries no control under the default final_node='remove'; with final_node='keep' it carries the held last move). Element i owns the
     half-open interval (fe[i], fe[i+1]], so the profile is left-continuous
     at interior boundaries; the initial point belongs to the first element.
 ``'piecewise_linear'``
@@ -350,8 +350,8 @@ class ParameterizeTransformation(Transformation):
         model : Block
             The already-discretized model to transform.
         **kwds
-            ``var``, ``contset``, and ``profile`` (see ``CONFIG``). Unknown
-            options raise ``ValueError``.
+            ``var``, ``contset``, ``profile``, and ``final_node`` (see
+            ``CONFIG``). Unknown options raise ``ValueError``.
         """
         config = self.CONFIG(kwds)
         var, contset, profile = config.var, config.contset, config.profile
@@ -374,11 +374,7 @@ class ParameterizeTransformation(Transformation):
                 while decls:
                     d = decls.pop(0)
                     self._parameterize(
-                        model,
-                        d["var"],
-                        d["wrt"],
-                        d["profile"],
-                        d.get("final_node", "remove"),
+                        model, d["var"], d["wrt"], d["profile"], d["final_node"]
                     )
                     found += 1
             if found == 0:
@@ -413,6 +409,9 @@ class ParameterizeTransformation(Transformation):
             The discretized time set ``var`` is indexed over.
         profile : str or tuple
             The profile specifier (see :func:`declare_profile`).
+        final_node : str, optional
+            ``'remove'`` (default) or ``'keep'``; see
+            :func:`declare_profile`.
 
         Returns
         -------
@@ -425,8 +424,8 @@ class ParameterizeTransformation(Transformation):
             If ``var`` or ``contset`` is missing or of the wrong type.
         ValueError
             If ``var`` is not indexed by ``contset`` exactly once, carries a
-            DerivativeVar, or a piecewise-constant control is referenced at
-            the final time.
+            DerivativeVar, or a piecewise-constant control with
+            ``final_node='remove'`` is referenced at the final time.
         RuntimeError
             If ``contset`` is not discretized, or a generated bound-
             constraint name collides with an existing component.

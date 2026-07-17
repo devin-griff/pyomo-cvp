@@ -62,8 +62,10 @@ difference. Controls may carry additional (non-time) indices.
 ## Profiles
 
 - `'piecewise_constant'` --- one free value per finite element, indexed by
-  the element's start time (`u[t0]` exists; the final time carries no
-  control).
+  the element's start time (`u[t0]` exists; under the default
+  `final_node='remove'` the final time carries no control, and under
+  `final_node='keep'` it carries the held last move, for horizons that
+  continue past the grid).
 - `'piecewise_linear'` --- one free value per element boundary, continuous,
   interior points interpolated.
 - `'collocation'` or `('collocation', k)`: the control is the element's

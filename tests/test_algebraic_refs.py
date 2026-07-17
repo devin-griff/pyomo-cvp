@@ -11,7 +11,9 @@ carrying a DerivativeVar: the user's ODEs and pyomo.dae's disc_eq) keep the
 old map, which is correct for the collocation node there. Algebraic
 expressions resolve a control reference to the element the reference sits in.
 The final node starts no element, so an algebraic reference to it errors
-instead of double-counting the last element. Only the discontinuous
+under the default final_node='remove' instead of double-counting the last
+element, and resolves to the held last move under final_node='keep' (for
+horizons that continue past the grid). Only the discontinuous
 piecewise_constant profile is affected; piecewise_linear and
 collocation are unchanged (their maps already coincide).
 """
