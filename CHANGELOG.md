@@ -6,6 +6,11 @@ to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.6.3.1] - 2026-07-17
+
+Packaging only: the source archive is rebuilt from the correct tree. No
+code changes from 0.6.3.
+
 ## [0.6.3] - 2026-07-17
 
 ### Changed
@@ -148,7 +153,8 @@ First release (alpha).
 - Guards: not-yet-discretized set, DerivativeVar-attached control, double
   application, reduced collocation without collocation or with k > ncp.
 
-[Unreleased]: https://github.com/devin-griff/pyomo-cvp/compare/v0.6.3...HEAD
+[Unreleased]: https://github.com/devin-griff/pyomo-cvp/compare/v0.6.3.1...HEAD
+[0.6.3.1]: https://github.com/devin-griff/pyomo-cvp/compare/v0.6.3...v0.6.3.1
 [0.6.3]: https://github.com/devin-griff/pyomo-cvp/compare/v0.6.2...v0.6.3
 [0.6.2]: https://github.com/devin-griff/pyomo-cvp/compare/v0.6.1...v0.6.2
 [0.6.1]: https://github.com/devin-griff/pyomo-cvp/compare/v0.6.0...v0.6.1
