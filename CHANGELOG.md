@@ -6,6 +6,18 @@ to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.7.0] - 2026-07-17
+
+### Changed
+
+- Controls sharing a time set parameterize in a single substitution pass:
+  declaration mode groups the declared profiles by their ContinuousSet,
+  and the explicit form accepts a list of control Vars. One pass over the
+  model replaces every control's eliminated members (the swap maps are
+  disjoint and merge), instead of one full pass per control. The
+  transformed model is unchanged; on a 27,000-constraint distillation
+  model the transform drops from 67 to 5 seconds.
+
 ## [0.6.3.1] - 2026-07-17
 
 Packaging only: the source archive is rebuilt from the correct tree. No
@@ -153,7 +165,8 @@ First release (alpha).
 - Guards: not-yet-discretized set, DerivativeVar-attached control, double
   application, reduced collocation without collocation or with k > ncp.
 
-[Unreleased]: https://github.com/devin-griff/pyomo-cvp/compare/v0.6.3.1...HEAD
+[Unreleased]: https://github.com/devin-griff/pyomo-cvp/compare/v0.7.0...HEAD
+[0.7.0]: https://github.com/devin-griff/pyomo-cvp/compare/v0.6.3.1...v0.7.0
 [0.6.3.1]: https://github.com/devin-griff/pyomo-cvp/compare/v0.6.3...v0.6.3.1
 [0.6.3]: https://github.com/devin-griff/pyomo-cvp/compare/v0.6.2...v0.6.3
 [0.6.2]: https://github.com/devin-griff/pyomo-cvp/compare/v0.6.1...v0.6.2
