@@ -62,10 +62,17 @@ difference. Controls may carry additional (non-time) indices.
 ## Profiles
 
 - `'piecewise_constant'` --- one free value per finite element, indexed by
-  the element's start time (`u[t0]` exists; under the default
-  `final_node='remove'` the final time carries no control, and under
-  `final_node='keep'` it carries the held last move, for horizons that
-  continue past the grid).
+  the element's start time (`u[t0]` exists). The control holds one value
+  per element and changes value at the element starts. Inside an element,
+  `u[t]` is that element's value. At an element boundary the control
+  jumps, so `u[t]` there could mean the value before the jump or the value
+  after it, and the two uses need different answers: model equations
+  (ODEs, and any constraint indexed over the time set) describe the
+  interval that ends at the boundary, so there `u[t]` is the value before
+  the jump; objectives and cost constraints charge for the decision made
+  at that instant, so there `u[t]` is the value after the jump. At the
+  final time no new value starts: model equations use the last value, and
+  a cost that references the control at the final time is an error.
 - `'piecewise_linear'` --- one free value per element boundary, continuous,
   interior points interpolated.
 - `'collocation'` or `('collocation', k)`: the control is the element's

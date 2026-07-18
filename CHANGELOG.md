@@ -6,6 +6,24 @@ to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.6.3] - 2026-07-17
+
+### Changed
+
+- Piecewise-constant control references resolve by what contains them.
+  Model equations (constraints carrying a DerivativeVar or indexed over
+  the ContinuousSet, and Expressions likewise) take the value before the
+  jump at an element boundary and the last value at the final time.
+  Objectives and cost constraints charge the decision made at that
+  instant, and a cost reference at the final time errors, since no move
+  starts there.
+
+### Removed
+
+- The `final_node` option on `declare_profile` and `cvp.parameterize`:
+  with references classified by their containing expression, nothing is
+  left for a flag to select.
+
 ## [0.6.2] - 2026-07-17
 
 ### Changed
@@ -130,7 +148,8 @@ First release (alpha).
 - Guards: not-yet-discretized set, DerivativeVar-attached control, double
   application, reduced collocation without collocation or with k > ncp.
 
-[Unreleased]: https://github.com/devin-griff/pyomo-cvp/compare/v0.6.2...HEAD
+[Unreleased]: https://github.com/devin-griff/pyomo-cvp/compare/v0.6.3...HEAD
+[0.6.3]: https://github.com/devin-griff/pyomo-cvp/compare/v0.6.2...v0.6.3
 [0.6.2]: https://github.com/devin-griff/pyomo-cvp/compare/v0.6.1...v0.6.2
 [0.6.1]: https://github.com/devin-griff/pyomo-cvp/compare/v0.6.0...v0.6.1
 [0.6.0]: https://github.com/devin-griff/pyomo-cvp/compare/v0.5.0...v0.6.0

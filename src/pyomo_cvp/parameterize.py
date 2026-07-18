@@ -13,9 +13,17 @@ Profiles
 --------
 ``'piecewise_constant'``
     One free value per finite element, indexed by the element's START time
-    (u[t0] exists; the final time carries no control under the default final_node='remove'; with final_node='keep' it carries the held last move). Element i owns the
-    half-open interval (fe[i], fe[i+1]], so the profile is left-continuous
-    at interior boundaries; the initial point belongs to the first element.
+    (u[t0] exists). The control holds one value per element and changes
+    value at the element starts. Inside an element, a reference u[t] is
+    that element's value. At an element boundary the control jumps, so
+    u[t] there could mean the value before the jump or the value after it,
+    and the two uses need different answers: model equations (ODEs, and
+    any constraint indexed over the time set) describe the interval that
+    ends at the boundary, so there u[t] is the value before the jump;
+    objectives and cost constraints charge for the decision made at that
+    instant, so there u[t] is the value after the jump. At the final time
+    no new value starts: model equations use the last value, and a cost
+    that references the control at the final time is an error.
 ``'piecewise_linear'``
     One free value per element boundary (nfe + 1 values), continuous, with
     interior points substituted by linear interpolation between the two
@@ -79,9 +87,7 @@ def _cvp_data(block, create=False):
     return store.get(_CVP_SCOPE) if store else None
 
 
-def declare_profile(
-    *variables, wrt=None, profile="piecewise_constant", final_node="remove"
-):
+def declare_profile(*variables, wrt=None, profile="piecewise_constant"):
     """Declare a control-vector-parameterization profile for one or more Vars.
 
     The declaration is inert metadata recorded on each variable's parent
@@ -101,21 +107,13 @@ def declare_profile(
         ``'piecewise_constant'`` (default), ``'piecewise_linear'``,
         ``'collocation'``, or ``('collocation', k)``. See the module
         docstring.
-    final_node : str, optional
-        Piecewise-constant only: what exists at the final grid point.
-        ``'remove'`` (default, the terminal-horizon convention): no move
-        exists there, and a reference to the control at the final point
-        errors. ``'keep'`` (the horizon-continues convention): the control
-        there is the held last move, and references resolve to it.
-
     Raises
     ------
     TypeError
         If no control Var is given, if ``wrt`` is missing or passed
         positionally, or if a ContinuousSet is passed as a control.
     ValueError
-        If ``profile`` is not a recognized profile, or ``final_node`` is not
-        ``'remove'`` or ``'keep'``.
+        If ``profile`` is not a recognized profile.
     """
     if not variables:
         raise TypeError(
@@ -131,7 +129,6 @@ def declare_profile(
             )
         raise TypeError("pyomo-cvp: wrt is required: declare_profile(m.u, wrt=m.tau)")
     _validate_profile(profile)
-    _validate_final_node(final_node)
     for var in variables:
         if isinstance(var, ContinuousSet):
             raise TypeError(
@@ -142,17 +139,7 @@ def declare_profile(
         store = _cvp_data(block, create=True)
         decls = store.setdefault("profiles", [])
         decls[:] = [d for d in decls if d["var"] is not var]  # last wins
-        decls.append(
-            {"var": var, "wrt": wrt, "profile": profile, "final_node": final_node}
-        )
-
-
-def _validate_final_node(final_node):
-    """Validate a final_node specifier."""
-    if final_node not in ("remove", "keep"):
-        raise ValueError(
-            f"pyomo-cvp: final_node must be 'remove' or 'keep'; got " f"{final_node!r}."
-        )
+        decls.append({"var": var, "wrt": wrt, "profile": profile})
 
 
 def _validate_profile(profile):
@@ -319,20 +306,6 @@ class ParameterizeTransformation(Transformation):
         ),
     )
     CONFIG.declare(
-        "final_node",
-        ConfigValue(
-            default=None,
-            description="Piecewise-constant only, explicit form only: what "
-            "exists at the final grid point. 'remove' (the default, the "
-            "terminal-horizon convention): no move exists there and a "
-            "reference to the control at the final point errors. 'keep' "
-            "(the horizon-continues convention): the control is defined "
-            "there as the held last move, and references resolve to it. In "
-            "declaration mode each declaration carries its own final_node "
-            "(see declare_profile), and passing this option errors.",
-        ),
-    )
-    CONFIG.declare(
         "profile",
         ConfigValue(
             default="piecewise_constant",
@@ -350,21 +323,12 @@ class ParameterizeTransformation(Transformation):
         model : Block
             The already-discretized model to transform.
         **kwds
-            ``var``, ``contset``, ``profile``, and ``final_node`` (see
-            ``CONFIG``). Unknown options raise ``ValueError``.
+            ``var``, ``contset``, and ``profile`` (see ``CONFIG``). Unknown
+            options raise ``ValueError``.
         """
         config = self.CONFIG(kwds)
         var, contset, profile = config.var, config.contset, config.profile
-        if config.final_node is not None:
-            _validate_final_node(config.final_node)
         if var is None and contset is None:
-            if config.final_node is not None:
-                raise ValueError(
-                    "pyomo-cvp: final_node is set on the declaration in "
-                    "declaration mode (declare_profile(..., final_node=...)); "
-                    "the call option is for the explicit form (var=, "
-                    "contset=)."
-                )
             found = 0
             for block in model.block_data_objects(active=True, descend_into=True):
                 store = _cvp_data(block)
@@ -373,9 +337,7 @@ class ParameterizeTransformation(Transformation):
                     continue
                 while decls:
                     d = decls.pop(0)
-                    self._parameterize(
-                        model, d["var"], d["wrt"], d["profile"], d["final_node"]
-                    )
+                    self._parameterize(model, d["var"], d["wrt"], d["profile"])
                     found += 1
             if found == 0:
                 raise RuntimeError(
@@ -384,11 +346,9 @@ class ParameterizeTransformation(Transformation):
                     "they were already applied)."
                 )
             return model
-        return self._parameterize(
-            model, var, contset, profile, config.final_node or "remove"
-        )
+        return self._parameterize(model, var, contset, profile)
 
-    def _parameterize(self, model, var, contset, profile, final_node="remove"):
+    def _parameterize(self, model, var, contset, profile):
         """Parameterize one control ``var`` over ``contset`` in place.
 
         Replaces ``var`` with a Var indexed by the profile's free time
@@ -409,9 +369,6 @@ class ParameterizeTransformation(Transformation):
             The discretized time set ``var`` is indexed over.
         profile : str or tuple
             The profile specifier (see :func:`declare_profile`).
-        final_node : str, optional
-            ``'remove'`` (default) or ``'keep'``; see
-            :func:`declare_profile`.
 
         Returns
         -------
@@ -424,8 +381,8 @@ class ParameterizeTransformation(Transformation):
             If ``var`` or ``contset`` is missing or of the wrong type.
         ValueError
             If ``var`` is not indexed by ``contset`` exactly once, carries a
-            DerivativeVar, or a piecewise-constant control with
-            ``final_node='remove'`` is referenced at the final time.
+            DerivativeVar, or a piecewise-constant control is referenced at
+            the final time in an objective or a cost constraint.
         RuntimeError
             If ``contset`` is not discretized, or a generated bound-
             constraint name collides with an existing component.
@@ -522,32 +479,25 @@ class ParameterizeTransformation(Transformation):
         # ODE there integrates with. It is applied to constraints that carry a
         # DerivativeVar (the user's ODEs and pyomo.dae's disc_eq).
         #
-        # submap_alg is the ALGEBRAIC map, for objectives / path constraints /
-        # non-differential expressions: a control reference names the control
-        # of the element it sits in (the decision the user wrote). The two maps
-        # differ only for the discontinuous piecewise_constant profile, and
-        # only at a finite-element boundary: the differential map takes the
-        # element ENDING at the node (left-continuous, correct for the
-        # collocation equation there), the algebraic map the element STARTING
-        # at it. For the continuous profiles the maps coincide. The final node
-        # starts no element: on a terminal horizon (final_node='remove', the
-        # default) no move exists there, so a reference is collected in
-        # `forbidden` and raised; when the horizon continues past the grid
-        # (final_node='keep'), the control there is the held last move and
-        # references resolve to it.
-        submap_alg = submap
+        # submap_cost is the COST map, for objectives and cost constraints:
+        # a control reference at an element start is the decision made at
+        # that instant. The two maps differ only for the discontinuous
+        # piecewise_constant profile, and only at the shared points: at an
+        # interior boundary the equation map takes the element ending there
+        # (the value before the jump) and the cost map the element starting
+        # there (the value after it); at the final point no new value
+        # starts, so the equation map takes the last value and a cost
+        # reference is an error.
+        submap_cost = submap
         forbidden = {}
         if mode == "piecewise_constant":
-            submap_alg = {}
+            submap_cost = {}
             for full, vd in old.items():
                 j = bisect_right(fe, full[pos]) - 1
                 if j >= len(fe) - 1:
-                    if final_node == "keep":
-                        submap_alg[id(vd)] = new_var[with_t(full, fe[-2])]
-                    else:
-                        forbidden[id(vd)] = vd.name
+                    forbidden[id(vd)] = vd.name
                 else:
-                    submap_alg[id(vd)] = new_var[with_t(full, fe[j])]
+                    submap_cost[id(vd)] = new_var[with_t(full, fe[j])]
 
         def check_final(expr, where):
             for v in identify_variables(expr):
@@ -557,10 +507,9 @@ class ParameterizeTransformation(Transformation):
                         f"pyomo-cvp: {where} references '{nm}', the control at "
                         f"the final time. A piecewise-constant control has one "
                         f"value per element (indexed by the element starts, "
-                        f"0..N-1); the final node carries no move on a "
-                        f"terminal horizon. Reference controls over the "
-                        f"elements, or pass final_node='keep' if the horizon "
-                        f"continues past the grid."
+                        f"0..N-1); no move starts at the final time, so a cost "
+                        f"cannot charge for one there. Cost terms belong at "
+                        f"the element starts, 0..N-1."
                     )
 
         deriv_ids = {
@@ -573,30 +522,45 @@ class ParameterizeTransformation(Transformation):
         def is_differential(expr):
             return any(id(v) in deriv_ids for v in identify_variables(expr))
 
+        # model equations get the equation map: a constraint (or named
+        # Expression) is an equation when it carries a DerivativeVar or its
+        # family is indexed over the time set. Everything else, and every
+        # objective, is a cost.
+        equation_family = {}
+
+        def is_equation(data):
+            comp = data.parent_component()
+            key = id(comp)
+            if key not in equation_family:
+                equation_family[key] = any(
+                    s is contset for s in comp.index_set().subsets()
+                )
+            return equation_family[key] or is_differential(data.expr)
+
         for c in model.component_data_objects(
             Constraint, active=True, descend_into=True
         ):
-            if is_differential(c.expr):
+            if is_equation(c):
                 c.set_value(replace_expressions(c.expr, submap))
             else:
                 if forbidden:
                     check_final(c.expr, f"constraint '{c.name}'")
-                c.set_value(replace_expressions(c.expr, submap_alg))
+                c.set_value(replace_expressions(c.expr, submap_cost))
         for o in model.component_data_objects(
             Objective, active=True, descend_into=True
         ):
             if forbidden:
                 check_final(o.expr, f"objective '{o.name}'")
-            o.set_value(replace_expressions(o.expr, submap_alg))
+            o.set_value(replace_expressions(o.expr, submap_cost))
         for e in model.component_data_objects(
             Expression, active=True, descend_into=True
         ):
-            if is_differential(e.expr):
+            if is_equation(e):
                 e.set_value(replace_expressions(e.expr, submap))
             else:
                 if forbidden:
                     check_final(e.expr, f"expression '{e.name}'")
-                e.set_value(replace_expressions(e.expr, submap_alg))
+                e.set_value(replace_expressions(e.expr, submap_cost))
 
         if bound_rows:
             clname = name + "_profile_bounds"

@@ -98,56 +98,58 @@ def test_pwc_path_constraint_no_shift():
 
 
 @pytest.mark.parametrize("scheme", ["LAGRANGE-RADAU", "LAGRANGE-LEGENDRE", "FD"])
-def test_pwc_final_node_reference_errors(scheme):
-    # the terminal-horizon default: no move exists at the final node, so an
-    # algebraic reference to the control there is a modeling error. The
-    # convention comes from the profile, not the scheme.
+def test_pwc_cost_at_the_final_time_errors(scheme):
+    # no move starts at the final time, so a cost cannot charge for one
+    # there. The convention comes from the profile, not the scheme.
     m = discretize(build("piecewise_constant", obj="all"), scheme)
     with pytest.raises(ValueError, match="final time"):
         pyo.TransformationFactory("cvp.parameterize").apply_to(m)
 
 
 @pytest.mark.parametrize("scheme", ["LAGRANGE-RADAU", "LAGRANGE-LEGENDRE", "FD"])
-def test_pwc_final_node_keep_resolves_to_the_held_move(scheme):
-    # the horizon-continues convention, declared per profile: the control at
-    # the final node is the held last move, so a DAE's algebraic equations
-    # there (the last element's equations) resolve like the collocation
-    # equation beside them.
-    m = build("piecewise_constant", obj="all")
-    declare_profile(m.u, wrt=m.i, profile="piecewise_constant", final_node="keep")
+def test_pwc_equation_gets_the_value_before_the_jump(scheme):
+    # a constraint indexed over the time set is a model equation: at a
+    # boundary its members describe the interval ending there, so the
+    # control reference is the value before the jump, and at the final
+    # time it is the last value -- never an error.
+    m = build("piecewise_constant", obj="elements")
+    m.w = pyo.Var(m.i, initialize=1.0)
+
+    @m.Constraint(m.i)
+    def w_def(mm, t):
+        return mm.w[t] == mm.u[t] + mm.z[t]
+
     m = discretize(m, scheme)
     pyo.TransformationFactory("cvp.parameterize").apply_to(m)
-    assert urefs(m.obj.expr)[-1] == f"u[{N - 1}]"  # the last element start
+    assert urefs(m.w_def[1].body) == ["u[0]"]  # boundary: value before the jump
+    assert urefs(m.w_def[2].body) == ["u[1]"]
+    assert urefs(m.w_def[N].body) == [f"u[{N - 1}]"]  # final time: last value
 
 
-def test_final_node_keep_via_the_explicit_form():
-    m = discretize(build("piecewise_constant", obj="all"))
-    pyo.TransformationFactory("cvp.parameterize").apply_to(
-        m, var=m.u, contset=m.i, profile="piecewise_constant", final_node="keep"
-    )
-    assert urefs(m.obj.expr)[-1] == f"u[{N - 1}]"
+def test_pwc_sparse_cost_constraint_at_the_final_time_errors():
+    # a constraint anchored to grid points (not the time set) is a cost:
+    # a member charging the control at the final time is an error.
+    m = build("piecewise_constant", obj="elements")
+    m.c = pyo.Var()
+
+    @m.Constraint(sorted(m.i))  # includes the final time
+    def cost_def(mm, t):
+        return mm.c >= mm.u[t]
+
+    m = discretize(m)
+    with pytest.raises(ValueError, match="final time"):
+        pyo.TransformationFactory("cvp.parameterize").apply_to(m)
 
 
 def test_redeclaration_replaces_the_pending_declaration():
-    # last declaration wins: the sanctioned way to update a declaration's
-    # convention before it is applied.
-    m = build("piecewise_constant", obj="all")
-    declare_profile(m.u, wrt=m.i, profile="piecewise_constant", final_node="keep")
+    # last declaration wins: build() declares piecewise_linear, the
+    # re-declaration switches to piecewise_constant, and one parameterize
+    # pass applies only the final profile.
+    m = build("piecewise_linear", obj="elements")
+    declare_profile(m.u, wrt=m.i, profile="piecewise_constant")
     m = discretize(m)
     pyo.TransformationFactory("cvp.parameterize").apply_to(m)  # one pass only
-    assert urefs(m.obj.expr)[-1] == f"u[{N - 1}]"
-
-
-def test_final_node_call_option_errors_in_declaration_mode():
-    m = discretize(build("piecewise_constant", obj="elements"))
-    with pytest.raises(ValueError, match="declaration mode"):
-        pyo.TransformationFactory("cvp.parameterize").apply_to(m, final_node="keep")
-
-
-def test_final_node_is_validated():
-    m = build("piecewise_constant")
-    with pytest.raises(ValueError, match="or 'keep'"):
-        declare_profile(m.u, wrt=m.i, profile="piecewise_constant", final_node="drop")
+    assert urefs(m.obj.expr) == ["u[0]", "u[1]", "u[2]", "u[3]"]  # pwc pricing
 
 
 @pytest.mark.parametrize("scheme", ["LAGRANGE-RADAU", "LAGRANGE-LEGENDRE", "FD"])
