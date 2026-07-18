@@ -295,7 +295,8 @@ class ParameterizeTransformation(Transformation):
         "var",
         ConfigValue(
             default=None,
-            description="Control Var to parameterize (paired with contset). "
+            description="Control Var to parameterize (paired with contset), "
+            "or a list of control Vars sharing the contset. "
             "Omit both var and contset to apply declare_profile declarations.",
         ),
     )
@@ -336,9 +337,17 @@ class ParameterizeTransformation(Transformation):
                 if not decls:
                     continue
                 while decls:
-                    d = decls.pop(0)
-                    self._parameterize(model, d["var"], d["wrt"], d["profile"])
-                    found += 1
+                    # controls sharing a time set parameterize in one pass
+                    wrt = decls[0]["wrt"]
+                    group = [d for d in decls if d["wrt"] is wrt]
+                    decls[:] = [d for d in decls if d["wrt"] is not wrt]
+                    self._parameterize(
+                        model,
+                        [d["var"] for d in group],
+                        wrt,
+                        [d["profile"] for d in group],
+                    )
+                    found += len(group)
             if found == 0:
                 raise RuntimeError(
                     "pyomo-cvp: no control profile declarations found on the "
@@ -349,26 +358,29 @@ class ParameterizeTransformation(Transformation):
         return self._parameterize(model, var, contset, profile)
 
     def _parameterize(self, model, var, contset, profile):
-        """Parameterize one control ``var`` over ``contset`` in place.
+        """Parameterize one or more controls over ``contset`` in place.
 
-        Replaces ``var`` with a Var indexed by the profile's free time
+        Replaces each control with a Var indexed by its profile's free time
         points, substitutes every eliminated copy out of all constraints,
-        objectives, and named expressions (the differential map on
-        expressions carrying a DerivativeVar, the algebraic map elsewhere),
-        and adds explicit bound constraints for eliminated copies whose
-        substitution is a non-convex combination of the free values. Records
-        profile metadata for :func:`control_value`.
+        objectives, and named expressions in one pass over the model (the
+        equation map on model equations, the cost map elsewhere), and adds
+        explicit bound constraints for eliminated copies whose substitution
+        is a non-convex combination of the free values. Records profile
+        metadata for :func:`control_value`.
 
         Parameters
         ----------
         model : Block
             The model being transformed.
-        var : Var
-            The control to parameterize.
+        var : Var or list of Vars
+            The control(s) to parameterize, each indexed over ``contset``.
+            The controls share the single substitution pass: their
+            eliminated members are disjoint, so the swap maps merge.
         contset : ContinuousSet
-            The discretized time set ``var`` is indexed over.
-        profile : str or tuple
-            The profile specifier (see :func:`declare_profile`).
+            The discretized time set the controls are indexed over.
+        profile : str, tuple, or list
+            The profile specifier (see :func:`declare_profile`), applied to
+            every control; a list gives one specifier per control.
 
         Returns
         -------
@@ -380,19 +392,20 @@ class ParameterizeTransformation(Transformation):
         TypeError
             If ``var`` or ``contset`` is missing or of the wrong type.
         ValueError
-            If ``var`` is not indexed by ``contset`` exactly once, carries a
-            DerivativeVar, or a piecewise-constant control is referenced at
+            If a control is not indexed by ``contset`` exactly once, carries
+            a DerivativeVar, or a piecewise-constant control is referenced at
             the final time in an objective or a cost constraint.
         RuntimeError
             If ``contset`` is not discretized, or a generated bound-
             constraint name collides with an existing component.
         """
-        mode, k = _validate_profile(profile)
         if var is None or contset is None:
             raise TypeError(
                 "pyomo-cvp: pass both var= and contset=, or neither (to apply "
                 "declare_profile declarations)."
             )
+        controls = list(var) if isinstance(var, (list, tuple)) else [var]
+        specs = profile if isinstance(profile, list) else [profile] * len(controls)
         if contset.ctype is not ContinuousSet:
             raise TypeError(
                 f"pyomo-cvp: contset must be a ContinuousSet, got "
@@ -404,100 +417,106 @@ class ParameterizeTransformation(Transformation):
                 f"pyomo-cvp: ContinuousSet '{contset.name}' has not been "
                 f"discretized; apply a dae.* transformation first."
             )
-        if var.ctype is not Var:
-            raise TypeError("pyomo-cvp: var must be a Var.")
-        idxset = var.index_set()
-        if idxset is contset:
-            subsets, pos = [contset], 0
-        else:
-            subsets = list(idxset.subsets())
-            matches = [i for i, s in enumerate(subsets) if s is contset]
-            if len(matches) != 1:
-                raise ValueError(
-                    f"pyomo-cvp: '{var.name}' is not indexed by "
-                    f"'{contset.name}' (exactly once). Either it was already "
-                    f"parameterized, or it is not a control over this set."
-                )
-            pos = matches[0]
-        # DerivativeVar registers with ctype Var, so filter by isinstance
-        for dv in model.component_objects(Var, active=True):
-            if isinstance(dv, DerivativeVar) and dv.get_state_var() is var:
-                raise ValueError(
-                    f"pyomo-cvp: '{var.name}' has DerivativeVar '{dv.name}'; "
-                    f"a parameterized control cannot be differentiated."
-                )
-
         fe = list(contset.get_finite_elements())
         points = sorted(contset)
-        pairs = self._profile_pairs(mode, k, fe, points, disc_info, contset)
-        free_times = sorted({ft for plist in pairs.values() for ft, _ in plist})
 
         def as_tuple(i):
             return i if isinstance(i, tuple) else (i,)
 
-        def with_t(full, t):
-            return full[:pos] + (t,) + full[pos + 1 :]
-
-        old = {as_tuple(i): var[i] for i in var}
-        free_attrs = {}
-        for full, vd in old.items():
-            if full[pos] in free_times:
-                free_attrs[full] = (vd.domain, vd.lb, vd.ub, vd.value)
-
-        name = var.local_name
-        parent = var.parent_block()
-        parent.del_component(var)
-        newsets = subsets[:pos] + [free_times] + subsets[pos + 1 :]
-        any_dom = next(iter(free_attrs.values()))[0]
-        new_var = Var(
-            *newsets,
-            domain=any_dom,
-            bounds=lambda m, *i: (free_attrs[i][1], free_attrs[i][2]),
-            initialize=lambda m, *i: free_attrs[i][3],
-        )
-        parent.add_component(name, new_var)
-
+        # submap is the EQUATION map: at a node it gives the control the
+        # interval ending there runs with (the value before the jump for
+        # piecewise_constant; see the module docstring). submap_cost is the
+        # COST map, for objectives and cost constraints: a reference at an
+        # element start is the decision made at that instant, and at the
+        # final time no move starts, so a cost reference there is collected
+        # in `forbidden` and raised. Every control's entries merge into the
+        # same maps: the eliminated members are disjoint, so one pass over
+        # the model replaces them all.
         submap = {}
-        # (expr, lb, ub) for eliminated copies whose substitution is a
-        # NON-convex combination of the free values: there the original
-        # variable bounds are not implied by the knot bounds and must be kept
-        # as explicit constraints (matching reduce_collocation_points, which
-        # enforces bounds at every collocation point).
-        bound_rows = []
-        for full, vd in old.items():
-            plist = pairs[full[pos]]
-            if len(plist) == 1 and plist[0][1] == 1.0:
-                node = new_var[with_t(full, plist[0][0])]
-            else:
-                node = sum(c * new_var[with_t(full, ft)] for ft, c in plist)
-                convex = all(-1e-12 <= c <= 1 + 1e-12 for _, c in plist)
-                if not convex and (vd.lb is not None or vd.ub is not None):
-                    bound_rows.append((node, vd.lb, vd.ub))
-            submap[id(vd)] = node
-
-        # submap is the DIFFERENTIAL map: at a node it gives the control the
-        # ODE there integrates with. It is applied to constraints that carry a
-        # DerivativeVar (the user's ODEs and pyomo.dae's disc_eq).
-        #
-        # submap_cost is the COST map, for objectives and cost constraints:
-        # a control reference at an element start is the decision made at
-        # that instant. The two maps differ only for the discontinuous
-        # piecewise_constant profile, and only at the shared points: at an
-        # interior boundary the equation map takes the element ending there
-        # (the value before the jump) and the cost map the element starting
-        # there (the value after it); at the final point no new value
-        # starts, so the equation map takes the last value and a cost
-        # reference is an error.
-        submap_cost = submap
+        submap_cost = {}
         forbidden = {}
-        if mode == "piecewise_constant":
-            submap_cost = {}
+        pending_bounds = []  # (parent, control name, rows) per control
+
+        for var, prof in zip(controls, specs):
+            mode, k = _validate_profile(prof)
+            if var is None or var.ctype is not Var:
+                raise TypeError("pyomo-cvp: var must be a Var.")
+            idxset = var.index_set()
+            if idxset is contset:
+                subsets, pos = [contset], 0
+            else:
+                subsets = list(idxset.subsets())
+                matches = [i for i, s in enumerate(subsets) if s is contset]
+                if len(matches) != 1:
+                    raise ValueError(
+                        f"pyomo-cvp: '{var.name}' is not indexed by "
+                        f"'{contset.name}' (exactly once). Either it was already "
+                        f"parameterized, or it is not a control over this set."
+                    )
+                pos = matches[0]
+            # DerivativeVar registers with ctype Var, so filter by isinstance
+            for dv in model.component_objects(Var, active=True):
+                if isinstance(dv, DerivativeVar) and dv.get_state_var() is var:
+                    raise ValueError(
+                        f"pyomo-cvp: '{var.name}' has DerivativeVar '{dv.name}'; "
+                        f"a parameterized control cannot be differentiated."
+                    )
+
+            pairs = self._profile_pairs(mode, k, fe, points, disc_info, contset)
+            free_times = sorted({ft for plist in pairs.values() for ft, _ in plist})
+
+            def with_t(full, t, pos=pos):
+                return full[:pos] + (t,) + full[pos + 1 :]
+
+            old = {as_tuple(i): var[i] for i in var}
+            free_attrs = {}
             for full, vd in old.items():
-                j = bisect_right(fe, full[pos]) - 1
-                if j >= len(fe) - 1:
-                    forbidden[id(vd)] = vd.name
+                if full[pos] in free_times:
+                    free_attrs[full] = (vd.domain, vd.lb, vd.ub, vd.value)
+
+            name = var.local_name
+            parent = var.parent_block()
+            parent.del_component(var)
+            newsets = subsets[:pos] + [free_times] + subsets[pos + 1 :]
+            any_dom = next(iter(free_attrs.values()))[0]
+            new_var = Var(
+                *newsets,
+                domain=any_dom,
+                bounds=lambda m, *i, _fa=free_attrs: (_fa[i][1], _fa[i][2]),
+                initialize=lambda m, *i, _fa=free_attrs: _fa[i][3],
+            )
+            parent.add_component(name, new_var)
+
+            # (expr, lb, ub) for eliminated copies whose substitution is a
+            # NON-convex combination of the free values: there the original
+            # variable bounds are not implied by the knot bounds and must be
+            # kept as explicit constraints (matching reduce_collocation_points,
+            # which enforces bounds at every collocation point).
+            bound_rows = []
+            for full, vd in old.items():
+                plist = pairs[full[pos]]
+                if len(plist) == 1 and plist[0][1] == 1.0:
+                    node = new_var[with_t(full, plist[0][0])]
                 else:
-                    submap_cost[id(vd)] = new_var[with_t(full, fe[j])]
+                    node = sum(c * new_var[with_t(full, ft)] for ft, c in plist)
+                    convex = all(-1e-12 <= c <= 1 + 1e-12 for _, c in plist)
+                    if not convex and (vd.lb is not None or vd.ub is not None):
+                        bound_rows.append((node, vd.lb, vd.ub))
+                submap[id(vd)] = node
+                if mode != "piecewise_constant":
+                    submap_cost[id(vd)] = node
+            if mode == "piecewise_constant":
+                for full, vd in old.items():
+                    j = bisect_right(fe, full[pos]) - 1
+                    if j >= len(fe) - 1:
+                        forbidden[id(vd)] = vd.name
+                    else:
+                        submap_cost[id(vd)] = new_var[with_t(full, fe[j])]
+            if bound_rows:
+                pending_bounds.append((parent, name, bound_rows))
+
+            info = _cvp_data(parent, create=True).setdefault("info", {})
+            info[name] = {"mode": mode, "k": k, "fe": fe, "pos": pos, "pairs": pairs}
 
         def check_final(expr, where):
             for v in identify_variables(expr):
@@ -562,7 +581,7 @@ class ParameterizeTransformation(Transformation):
                     check_final(e.expr, f"expression '{e.name}'")
                 e.set_value(replace_expressions(e.expr, submap_cost))
 
-        if bound_rows:
+        for parent, name, bound_rows in pending_bounds:
             clname = name + "_profile_bounds"
             if parent.find_component(clname) is not None:
                 raise RuntimeError(f"pyomo-cvp: component '{clname}' already exists.")
@@ -575,9 +594,6 @@ class ParameterizeTransformation(Transformation):
                     cl.add(node >= lb)
                 else:
                     cl.add(node <= ub)
-
-        info = _cvp_data(parent, create=True).setdefault("info", {})
-        info[name] = {"mode": mode, "k": k, "fe": fe, "pos": pos, "pairs": pairs}
 
         return model
 

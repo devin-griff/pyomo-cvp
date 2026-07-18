@@ -6,14 +6,12 @@ The bug: parameterize rewrote control references uniformly, so an algebraic
 reference to element k's control u[fe[k]] became element k-1's u[fe[k-1]],
 silently penalizing the wrong element in objectives and path constraints.
 
-The fix splits the rewrite by expression kind. Differential equations (those
-carrying a DerivativeVar: the user's ODEs and pyomo.dae's disc_eq) keep the
-old map, which is correct for the collocation node there. Algebraic
-expressions resolve a control reference to the element the reference sits in.
-The final node starts no element, so an algebraic reference to it errors
-under the default final_node='remove' instead of double-counting the last
-element, and resolves to the held last move under final_node='keep' (for
-horizons that continue past the grid). Only the discontinuous
+The fix splits the rewrite by expression kind. Model equations (those
+carrying a DerivativeVar, or whose family is indexed over the time set)
+keep the old map: at a boundary the value before the jump, at the final
+time the last value. Objectives and cost constraints resolve a control
+reference to the element starting there, and a cost reference at the
+final time errors, since no move starts there. Only the discontinuous
 piecewise_constant profile is affected; piecewise_linear and
 collocation are unchanged (their maps already coincide).
 """
