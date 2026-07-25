@@ -111,9 +111,7 @@ def test_parameterize_keeps_units():
     pyo.TransformationFactory("dae.collocation").apply_to(
         m, nfe=4, ncp=2, scheme="LAGRANGE-RADAU"
     )
-    pyo.TransformationFactory("cvp.parameterize").apply_to(
-        m, var=m.u, contset=m.tau
-    )
+    pyo.TransformationFactory("cvp.parameterize").apply_to(m, var=m.u, contset=m.tau)
     member = next(iter(m.u.values()))
     assert str(U.get_units(member)) == "W"
     # and the referencing constraint is still dimensionally consistent,
@@ -123,9 +121,10 @@ def test_parameterize_keeps_units():
 
 
 def test_parameterize_unitless_control_stays_unitless():
+    """Asserted through get_units() is None rather than pyo.units, so it runs
+    on the min-deps config too: asking the units engine anything needs pint,
+    even about a Var that never had units."""
     m = discretize(racecar())
-    pyo.TransformationFactory("cvp.parameterize").apply_to(
-        m, var=m.u, contset=m.tau
-    )
+    pyo.TransformationFactory("cvp.parameterize").apply_to(m, var=m.u, contset=m.tau)
     member = next(iter(m.u.values()))
-    assert str(pyo.units.get_units(member)) == "dimensionless"
+    assert member.get_units() is None
