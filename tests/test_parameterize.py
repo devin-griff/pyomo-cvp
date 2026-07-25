@@ -89,3 +89,42 @@ def test_guard_double_apply():
     xf.apply_to(m, var=m.u, contset=m.tau)
     with pytest.raises(ValueError, match="not indexed by"):
         xf.apply_to(m, var=m.u, contset=m.tau)
+
+
+def test_parameterize_keeps_units():
+    """The rebuilt control carries the original's units (gh #1): a control
+    declared in W came back unitless, and every constraint referencing it
+    stopped being dimensionally consistent."""
+    pytest.importorskip("pint")
+    from pyomo.dae import ContinuousSet
+
+    U = pyo.units
+    m = pyo.ConcreteModel()
+    m.tau = ContinuousSet(bounds=(0, 1))
+    m.u = pyo.Var(m.tau, bounds=(-3, 1), initialize=0, units=U.W)
+    m.w = pyo.Var(m.tau, units=U.W)
+
+    @m.Constraint(m.tau)
+    def bal(mm, t):
+        return mm.w[t] == mm.u[t]
+
+    pyo.TransformationFactory("dae.collocation").apply_to(
+        m, nfe=4, ncp=2, scheme="LAGRANGE-RADAU"
+    )
+    pyo.TransformationFactory("cvp.parameterize").apply_to(m, var=m.u, contset=m.tau)
+    member = next(iter(m.u.values()))
+    assert str(U.get_units(member)) == "W"
+    # and the referencing constraint is still dimensionally consistent,
+    # including rows whose control was eliminated by substitution
+    for c in m.bal.values():
+        assert str(U.get_units(c.body)) == "W"
+
+
+def test_parameterize_unitless_control_stays_unitless():
+    """Asserted through get_units() is None rather than pyo.units, so it runs
+    on the min-deps config too: asking the units engine anything needs pint,
+    even about a Var that never had units."""
+    m = discretize(racecar())
+    pyo.TransformationFactory("cvp.parameterize").apply_to(m, var=m.u, contset=m.tau)
+    member = next(iter(m.u.values()))
+    assert member.get_units() is None

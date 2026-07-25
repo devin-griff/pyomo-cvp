@@ -476,6 +476,9 @@ class ParameterizeTransformation(Transformation):
 
             name = var.local_name
             parent = var.parent_block()
+            # units are uniform per component, so one member carries them; a
+            # unitless control reports None and the rebuild stays unitless
+            any_units = next(iter(old.values())).get_units()
             parent.del_component(var)
             newsets = subsets[:pos] + [free_times] + subsets[pos + 1 :]
             any_dom = next(iter(free_attrs.values()))[0]
@@ -484,6 +487,7 @@ class ParameterizeTransformation(Transformation):
                 domain=any_dom,
                 bounds=lambda m, *i, _fa=free_attrs: (_fa[i][1], _fa[i][2]),
                 initialize=lambda m, *i, _fa=free_attrs: _fa[i][3],
+                units=any_units,
             )
             parent.add_component(name, new_var)
 

@@ -6,6 +6,16 @@ to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Fixed
+
+- `cvp.parameterize` rebuilds the control on the reduced time set carrying the
+  original component's units (#1). A control declared with `units=` came back
+  unitless, so every constraint referencing it stopped being dimensionally
+  consistent; the solve was unaffected, but `assert_units_consistent` and any
+  unit checking failed on a previously consistent model. A unitless control is
+  unchanged.
+
+
 ## [0.7.0] - 2026-07-17
 
 ### Changed
