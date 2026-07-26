@@ -8,3 +8,5 @@ extend-exclude = ["examples/*.ipynb"]
 [default.extend-words]
 # real-time optimization, not a typo of "TO"
 RTO = "RTO"
+# the process modeling framework, not a typo of "IDEAS"
+IDAES = "IDAES"

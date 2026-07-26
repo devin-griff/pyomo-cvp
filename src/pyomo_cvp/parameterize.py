@@ -9,6 +9,13 @@ substituted out of all constraints, objectives, and named expressions as a
 linear combination of the free values. No linking constraints, no leftover
 copies.
 
+The transform is Reference-aware. A control declared as a time-indexed
+Reference (an IDAES Port entry) does not own its members: they stay in the
+model, each tied to its profile value by an equality row, so Ports, Arcs,
+and reporting keep reading live variables. A Reference *to* a replaced
+control is rebuilt under its own name as a view of the profile, and Ports
+are re-pointed at the rebuilt views.
+
 Profiles
 --------
 ``'piecewise_constant'``
@@ -46,6 +53,7 @@ from pyomo.core import (
     ConstraintList,
     Expression,
     Objective,
+    Reference,
     Transformation,
     TransformationFactory,
     Var,
@@ -54,6 +62,7 @@ from pyomo.core import (
 from pyomo.core.expr import replace_expressions
 from pyomo.core.expr.visitor import identify_variables
 from pyomo.dae import ContinuousSet, DerivativeVar
+from pyomo.network import Port
 
 PROFILES = ("piecewise_constant", "piecewise_linear", "collocation")
 
@@ -436,6 +445,8 @@ class ParameterizeTransformation(Transformation):
         submap_cost = {}
         forbidden = {}
         pending_bounds = []  # (parent, control name, rows) per control
+        pending_ties = []  # (parent, control name, (referent, node) pairs)
+        detached_ids = set()  # data of deleted flat containers
 
         for var, prof in zip(controls, specs):
             mode, k = _validate_profile(prof)
@@ -476,6 +487,10 @@ class ParameterizeTransformation(Transformation):
 
             name = var.local_name
             parent = var.parent_block()
+            # a Reference control does not own its members: they stay in
+            # the model and are tied to the profile below, so nothing goes
+            # stale for whatever else views them (an IDAES Port's stream)
+            is_ref = var.is_reference()
             # units are uniform per component, so one member carries them; a
             # unitless control reports None and the rebuild stays unitless
             any_units = next(iter(old.values())).get_units()
@@ -497,6 +512,7 @@ class ParameterizeTransformation(Transformation):
             # kept as explicit constraints (matching reduce_collocation_points,
             # which enforces bounds at every collocation point).
             bound_rows = []
+            ties = []
             for full, vd in old.items():
                 plist = pairs[full[pos]]
                 if len(plist) == 1 and plist[0][1] == 1.0:
@@ -507,6 +523,10 @@ class ParameterizeTransformation(Transformation):
                     if not convex and (vd.lb is not None or vd.ub is not None):
                         bound_rows.append((node, vd.lb, vd.ub))
                 submap[id(vd)] = node
+                if is_ref:
+                    ties.append((vd, node))
+                else:
+                    detached_ids.add(id(vd))
                 if mode != "piecewise_constant":
                     submap_cost[id(vd)] = node
             if mode == "piecewise_constant":
@@ -518,6 +538,8 @@ class ParameterizeTransformation(Transformation):
                         submap_cost[id(vd)] = new_var[with_t(full, fe[j])]
             if bound_rows:
                 pending_bounds.append((parent, name, bound_rows))
+            if ties:
+                pending_ties.append((parent, name, ties))
 
             info = _cvp_data(parent, create=True).setdefault("info", {})
             info[name] = {"mode": mode, "k": k, "fe": fe, "pos": pos, "pairs": pairs}
@@ -598,6 +620,52 @@ class ParameterizeTransformation(Transformation):
                     cl.add(node >= lb)
                 else:
                     cl.add(node <= ub)
+
+        # a Reference control's members stay behind, substituted out of
+        # every expression above: each is tied to its profile value (the
+        # equation map, the value its interval runs with), so it stays live
+        # and correct for Ports, Arcs, and reporting. One row per member
+        # against one otherwise-unconstrained member: dof-neutral.
+        for parent, name, ties in pending_ties:
+            clname = name + "_profile_ties"
+            if parent.find_component(clname) is not None:
+                raise RuntimeError(f"pyomo-cvp: component '{clname}' already exists.")
+            cl = ConstraintList()
+            parent.add_component(clname, cl)
+            for vd, node in ties:
+                cl.add(vd == node)
+
+        # a Reference TO a replaced flat control still points at the deleted
+        # members: rebuild it under its own name as a view of the profile.
+        # An entry whose substitution is a single free value follows it; an
+        # interpolated entry has no variable to view and is dropped, so a
+        # piecewise-constant view keeps its full index and the others keep
+        # the free points.
+        swapped = {}
+        for comp in list(model.component_objects(Var, active=True, descend_into=True)):
+            if not comp.is_reference():
+                continue
+            data = list(comp.items())
+            if not any(id(d) in detached_ids for _, d in data):
+                continue
+            entries = {}
+            for idx, d in data:
+                node = submap[id(d)] if id(d) in detached_ids else d
+                if node.is_variable_type():
+                    entries[idx] = node
+            rparent, rname = comp.parent_block(), comp.local_name
+            rparent.del_component(comp)
+            if entries:
+                new_ref = Reference(entries)
+                rparent.add_component(rname, new_ref)
+                swapped[id(comp)] = new_ref
+        # a Port holds its entries by object: swap in the rebuilt views
+        if swapped:
+            for port in model.component_objects(Port, active=True, descend_into=True):
+                for pname, item in list(port.vars.items()):
+                    new = swapped.get(id(item))
+                    if new is not None:
+                        port.vars[pname] = new
 
         return model
 

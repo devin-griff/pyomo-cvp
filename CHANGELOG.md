@@ -4,6 +4,28 @@ All notable changes to this project are documented here. The format is based
 on [Keep a Changelog](https://keepachangelog.com/), and the project adheres
 to [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Fixed
+
+- References and Ports stay live through the control rebuild (#3). The
+  rebuild replaces the control container, and two Reference shapes went
+  stale with it. A Reference to a replaced flat control (the IDAES
+  `heat_duty` idiom) pointed at the deleted members and read pre-solve
+  values; it is now rebuilt under its own name as a view of the profile,
+  each entry following its substitution when that is a single free value
+  (every entry for piecewise_constant, the free points for the
+  interpolating profiles), and Ports are re-pointed at the rebuilt views.
+  A control that is itself a Reference (the IDAES inlet idiom, referents
+  inside `Block(time)` members) left its referents orphaned, free and in
+  no constraint; each referent is now tied to its profile value by an
+  equality row (`<name>_profile_ties`), one row per otherwise-unconstrained
+  member, so Ports, Arcs, and reporting keep reading live variables and
+  the transform stays dof-equivalent to the flat route. The solve was
+  unaffected in the usual order; what broke was everything that read the
+  model through References afterward. A model with no References is
+  unchanged.
+
 ## [0.7.1] - 2026-07-25
 
 ### Fixed
